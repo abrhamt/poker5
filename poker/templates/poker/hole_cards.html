@@ -1,0 +1,38 @@
+{% load static %}
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Poker">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="theme-color" content="#ccc" />
+    <title>Hole Cards</title>
+    <link rel="apple-touch-icon" href="{% static 'poker/icons/180x180.png' %}" />
+    <link rel="shortcut icon" href="{% static 'poker/icons/favicon.png' %}">
+    <link rel="manifest" href="{% static 'poker/manifest.json' %}">
+    <link rel="stylesheet" href="{% static 'poker/css/style.css' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Secular+One&display=swap" rel="stylesheet">
+</head>
+<body id="hole-cards">
+    <div id="single">
+        <div class="hole-cards">
+            <img class="big" src="{% static 'poker/cards/1B.svg' %}">
+            <img class="big" src="{% static 'poker/cards/1B.svg' %}">
+        </div>
+        <h3>Player Name</h3>
+        <div class="chips">
+            <span class="total">2000</span>
+            <span class="bet hidden">0</span>
+            <span id="pot" class="hidden">0</span>
+        </div>
+        <div id="singleview-notifications" class="hidden"></div>
+    </div>
+    <input type="hidden" id="table-id" value="{{ table_id }}">
+    <input type="hidden" id="param-data" value="{{ params_raw }}">
+    <script src="{% static 'poker/js/singleView.js' %}"></script>
+</body>
+</html>
