@@ -1,0 +1,128 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Poker">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="theme-color" content="#2e426b" />
+    <title>Poker</title>
+    <link rel="apple-touch-icon" href="{{static "poker/icons/180x180.png"}}" />
+    <link rel="icon" href="{{static "poker/icons/favicon.png"}}" type="image/png" sizes="32x32">
+    <link rel="icon" href="{{static "poker/icons/poker-chip.svg"}}" type="image/svg+xml">
+    <link rel="manifest" href="{{static "poker/manifest.json"}}">
+    <link rel="stylesheet" href="{{static "poker/css/style.css"}}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Secular+One&display=swap" rel="stylesheet">
+</head>
+<body>
+    <main>
+        {{range .Seats}}
+        <div class="seat" data-rotation="0">
+            <div class="hole-cards">
+                <img class="card" src="{{static "poker/cards/1B.svg"}}">
+                <img class="card" src="{{static "poker/cards/1B.svg"}}">
+                <div class="qr hidden"></div>
+                <div class="rotate hidden">
+                    <img src="{{static "poker/icons/rotate.svg"}}">
+                </div>
+                <img class="dealer blind-icons hidden" src="{{static "poker/icons/dealer.svg"}}">
+                <img class="small-blind blind-icons hidden" src="{{static "poker/icons/small-blind.svg"}}">
+                <img class="big-blind blind-icons hidden" src="{{static "poker/icons/big-blind.svg"}}">
+                <img class="close" src="{{static "poker/icons/close.svg"}}">
+                <span class="win-probality hidden"></span>
+            </div>
+            <h3 contenteditable="true"></h3>
+            <div class="hand-name hidden"></div>
+            <div class="chips">
+                <span class="total">2000</span>
+                <span class="bet">0</span>
+            </div>
+        </div>
+        {{end}}
+
+        <aside id="notification-sidebar">
+            <h4>Game Log</h4>
+            <div id="notification"><span>Enter player names – leave fields empty to add bots – then click Start.</span></div>
+        </aside>
+        <div id="table-middle">
+            <section class="infos">
+                <div id="pot">0</div>
+            </section>
+            <section id="community-cards">
+                <div class="cardslot"></div>
+                <div class="cardslot"></div>
+                <div class="cardslot"></div>
+                <div class="cardslot"></div>
+                <div class="cardslot"></div>
+            </section>
+            <section class="actions">
+                <button type="button" id="start-button">Start</button>
+                <button type="button" id="fold-button" class="hidden">Fold</button>
+                <button type="button" id="action-button" class="hidden">Check</button>
+                <input type="range" id="amount-slider" class="hidden" value="0" min="0" max="2000" step="10">
+                <output class="hidden">0</output>
+            </section>
+        </div>
+    </main>
+    <footer>
+        <div id="credit"><a href="https://github.com/Tehes">made by Tehes</a></div>
+        <div id="admin-bar">
+            <button type="button" id="winprob-toggle" class="hidden">
+                Win Probability: <span id="winprob-state">off</span>
+            </button>
+        </div>
+        <div id="social">
+            <a href="https://github.com/Tehes/poker"><img src="{{static "poker/social/github.svg"}}" width="25" height="25"></a>
+            <a href="https://www.threads.net/@tehes83"><img src="{{static "poker/social/threads.svg"}}" width="25" height="25"></a>
+        </div>
+    </footer>
+
+    <table id="stats-table" class="hidden">
+        <thead><tr>
+            <th>Player</th><th>Stack</th><th>Hands</th><th>Won</th><th>Win %</th>
+            <th>Showdowns</th><th>SD Won</th><th>SD %</th>
+            <th>Folds</th><th>Pre</th><th>Post</th><th>All-ins</th>
+        </tr></thead>
+        <tbody></tbody>
+    </table>
+
+    <aside id="modal" class="hidden">
+        <div id="modal-content"></div>
+    </aside>
+
+    <div id="showdown-overlay" class="hidden">
+        <div id="showdown-modal">
+            <div id="showdown-winner-row">
+                <div id="showdown-winner-name"></div>
+                <div id="showdown-hand-name"></div>
+            </div>
+            <div id="showdown-cards"></div>
+            <div id="showdown-amount-row">
+                <span id="showdown-amount-label">wins</span>
+                <span id="showdown-amount"></span>
+                <span id="showdown-amount-suffix">chips</span>
+            </div>
+            <div id="showdown-countdown">
+                <span id="showdown-countdown-label">Next hand in</span>
+                <span id="showdown-countdown-value">5</span>
+                <button type="button" id="showdown-skip">Start now</button>
+            </div>
+            <div id="showdown-seat-editor">
+                <div id="showdown-seat-editor-title">Seat editor</div>
+                <div id="showdown-seat-list"></div>
+                <div id="showdown-seat-add">
+                    <input type="text" id="showdown-seat-add-name" maxlength="32" placeholder="Player name (or 'Bot X')">
+                    <button type="button" id="showdown-seat-add-btn">Add seat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <input type="hidden" id="table-id" value="{{.TableID}}">
+    <script src="{{static "poker/js/kjua.min.js"}}"></script>
+    <script src="{{static "poker/js/app.js"}}"></script>
+</body>
+</html>
