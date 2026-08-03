@@ -10,12 +10,6 @@ import (
 	"time"
 )
 
-// WinProbClient is the client side of the win-probability microservice.
-//
-// It is goroutine-safe (the http.Client is) and includes a small in-memory
-// cache keyed by hole+board+opponents to avoid hammering the microservice
-// with identical requests (the engine re-queries state many times per
-// second via /api/state/).
 type WinProbClient struct {
 	BaseURL    string
 	HTTPClient *http.Client
@@ -23,9 +17,6 @@ type WinProbClient struct {
 	Cache      *wpCache
 }
 
-// NewWinProbClient returns a client targeting the supplied microservice
-// base URL (e.g. http://localhost:18081). A zero value for `iterations`
-// defaults to 1000.
 func NewWinProbClient(baseURL string, iterations int) *WinProbClient {
 	if iterations <= 0 {
 		iterations = 1000
@@ -49,9 +40,6 @@ type wpResponse struct {
 	WinProbability float64 `json:"win_probability"`
 }
 
-// Evaluate sends a single Monte Carlo request to the microservice and
-// returns the win probability. Errors fall back to 0 so the calling code
-// can stay simple; the underlying error is logged for debugging.
 func (c *WinProbClient) Evaluate(hole, board []string, numOpponents int) (float64, error) {
 	if c == nil || c.BaseURL == "" {
 		return 0, errors.New("winprob client not configured")
@@ -86,7 +74,6 @@ func (c *WinProbClient) Evaluate(hole, board []string, numOpponents int) (float6
 	return out.WinProbability, nil
 }
 
-// wpCache is a tiny LRU-ish cache for repeated win-probability queries.
 type wpCache struct {
 	mu      sync.Mutex
 	entries map[string]wpCacheEntry
@@ -117,7 +104,6 @@ func (c *wpCache) Put(key string, value float64) {
 	defer c.mu.Unlock()
 	c.entries[key] = wpCacheEntry{value: value, expiresAt: time.Now().Add(30 * time.Second)}
 	if len(c.entries) > c.max {
-		// Naive eviction: drop the first expired/oldest entry.
 		for k := range c.entries {
 			if time.Now().After(c.entries[k].expiresAt) || k == key {
 				delete(c.entries, k)

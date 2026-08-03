@@ -11,82 +11,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// MemoryStorage is the in-memory implementation of Storage used by tests and
-// by the CLI demo. It satisfies the same interface as SQLiteStorage.
-type MemoryStorage struct {
-	mu      sync.Mutex
-	games   map[string]*Game
-	players map[int64][]*Player
-	config  map[string]string
-	nextID  int64
-}
-
-// NewMemoryStorage constructs an empty MemoryStorage.
-func NewMemoryStorage() *MemoryStorage {
-	return &MemoryStorage{
-		games:   map[string]*Game{},
-		players: map[int64][]*Player{},
-		config:  map[string]string{},
-	}
-}
-
-// GetOrCreateGame implements Storage.
-func (m *MemoryStorage) GetOrCreateGame(tableID string) (*Game, []*Player, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if g, ok := m.games[tableID]; ok {
-		return g, append([]*Player{}, m.players[g.ID]...), false, nil
-	}
-	m.nextID++
-	g := NewGame(tableID)
-	g.ID = m.nextID
-	m.games[tableID] = g
-	m.players[g.ID] = []*Player{}
-	return g, []*Player{}, true, nil
-}
-
-// SaveGame implements Storage.
-func (m *MemoryStorage) SaveGame(g *Game, players []*Player) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if g.ID == 0 {
-		m.nextID++
-		g.ID = m.nextID
-		m.games[g.TableID] = g
-	}
-	for _, p := range players {
-		if p.GameID == 0 {
-			p.GameID = g.ID
-		}
-	}
-	m.players[g.ID] = append([]*Player{}, players...)
-	g.UpdatedAt = time.Now()
-	if g.CreatedAt.IsZero() {
-		g.CreatedAt = g.UpdatedAt
-	}
-	return nil
-}
-
-// LoadGame implements Storage.
-func (m *MemoryStorage) LoadGame(tableID string) (*Game, []*Player, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	g, ok := m.games[tableID]
-	if !ok {
-		return nil, nil, fmt.Errorf("game %q not found", tableID)
-	}
-	return g, append([]*Player{}, m.players[g.ID]...), nil
-}
-
-// SQLiteStorage is the on-disk implementation of Storage using
-// modernc.org/sqlite (a pure-Go SQLite implementation, no cgo required).
 type SQLiteStorage struct {
 	db *sql.DB
 	mu sync.Mutex
 }
 
-// NewSQLiteStorage opens (or creates) the SQLite database at the supplied
-// DSN. Use "file::memory:?cache=shared" for an in-process database.
 func NewSQLiteStorage(dsn string) (*SQLiteStorage, error) {
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -99,11 +28,8 @@ func NewSQLiteStorage(dsn string) (*SQLiteStorage, error) {
 	return &SQLiteStorage{db: db}, nil
 }
 
-// Close releases the underlying database handle.
 func (s *SQLiteStorage) Close() error { return s.db.Close() }
 
-// Schema is the SQL DDL used by SQLiteStorage. It mirrors the table layout
-// produced by the Django ORM for poker/models.py.
 const Schema = `
 CREATE TABLE IF NOT EXISTS poker_game (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,7 +92,6 @@ CREATE TABLE IF NOT EXISTS poker_config (
 );
 `
 
-// GetOrCreateGame implements Storage.
 func (s *SQLiteStorage) GetOrCreateGame(tableID string) (*Game, []*Player, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -197,7 +122,6 @@ func (s *SQLiteStorage) GetOrCreateGame(tableID string) (*Game, []*Player, bool,
 	return g, []*Player{}, true, nil
 }
 
-// SaveGame implements Storage.
 func (s *SQLiteStorage) SaveGame(g *Game, players []*Player) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -220,7 +144,6 @@ func (s *SQLiteStorage) SaveGame(g *Game, players []*Player) error {
 	return s.upsertPlayers(g.ID, players)
 }
 
-// LoadGame implements Storage.
 func (s *SQLiteStorage) LoadGame(tableID string) (*Game, []*Player, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -474,8 +397,6 @@ func nullString(s *string) interface{} {
 	return *s
 }
 
-// GetConfig returns the value for the given config key. Returns ("", false,
-// nil) when the key does not exist. SQLite-only.
 func (s *SQLiteStorage) GetConfig(key string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -490,7 +411,6 @@ func (s *SQLiteStorage) GetConfig(key string) (string, bool, error) {
 	return value, true, nil
 }
 
-// SetConfig writes a key/value pair into poker_config. SQLite-only.
 func (s *SQLiteStorage) SetConfig(key, value string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -501,30 +421,6 @@ func (s *SQLiteStorage) SetConfig(key, value string) error {
 	return err
 }
 
-// GetConfig satisfies ConfigStore on MemoryStorage.
-func (m *MemoryStorage) GetConfig(key string) (string, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.config == nil {
-		return "", false, nil
-	}
-	v, ok := m.config[key]
-	return v, ok, nil
-}
-
-// SetConfig satisfies ConfigStore on MemoryStorage.
-func (m *MemoryStorage) SetConfig(key, value string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.config == nil {
-		m.config = map[string]string{}
-	}
-	m.config[key] = value
-	return nil
-}
-
-// ConfigStore is the subset of Storage used by the admin config endpoints.
-// It is satisfied by both MemoryStorage and SQLiteStorage.
 type ConfigStore interface {
 	GetConfig(key string) (string, bool, error)
 	SetConfig(key, value string) error

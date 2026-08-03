@@ -1,15 +1,3 @@
-// Command winprob-ms is a tiny microservice that computes poker win
-// probabilities via Monte Carlo simulation. It is intentionally
-// self-contained - it has no dependency on the main poker server, just
-// shares the poker Go package for the hand evaluator.
-//
-// Endpoints:
-//
-//	POST /evaluate   {"hole":["As","Kh"],"board":["Qs","Js","2c"],"num_opponents":3,"iterations":1000}
-//	                 -> {"win_probability":42.5}
-//	GET  /health     -> {"ok":true,"service":"winprob-ms"}
-//
-// Bind address is controlled by -addr (default ":18081").
 package main
 
 import (
