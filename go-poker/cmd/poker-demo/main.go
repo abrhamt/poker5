@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/zuse/poker5/go-poker"
+	"github.com/zuse/poker5/go-poker/handlers"
 )
 
 func main() {
@@ -44,11 +45,12 @@ func runServer(addr, dbPath string) {
 	}
 	defer db.Close()
 
-	srv := poker.NewFiberServer(db)
+	srv := handlers.NewFiberServer(db)
 	if err := srv.Listen(addr); err != nil {
 		log.Fatalf("fiber listen error: %v", err)
 	}
 }
+
 
 func runDemo() {
 	storage := poker.NewMemoryStorage()

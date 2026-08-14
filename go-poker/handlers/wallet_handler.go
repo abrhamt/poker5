@@ -24,19 +24,44 @@ func (h *WalletHandler) Deposit(c fiber.Ctx) error {
 
 	user, err := h.auth.GetUserByToken(c.Context(), token)
 	if err != nil {
+		if c.Get("HX-Request") == "true" {
+			c.Set("HX-Redirect", "/login")
+			return c.SendStatus(fiber.StatusUnauthorized)
+		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
 	var body struct {
-		Amount float64 `json:"amount"`
+		Amount int64 `json:"amount" form:"amount"`
 	}
-	if err := c.Bind().JSON(&body); err != nil || body.Amount <= 0 {
+	_ = c.Bind().Body(&body)
+	if body.Amount <= 0 {
+		if amtStr := c.FormValue("amount"); amtStr != "" {
+			body.Amount, _ = strconv.ParseInt(amtStr, 10, 64)
+		}
+	}
+	if body.Amount <= 0 {
+		_ = c.Bind().JSON(&body)
+	}
+
+	if body.Amount <= 0 {
+		if c.Get("HX-Request") == "true" {
+			return c.SendString(`<div class="toast error">Please enter a valid deposit amount greater than $0.</div>`)
+		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid deposit amount"})
 	}
 
 	tx, err := h.wallet.Deposit(c.Context(), user.ID, body.Amount)
 	if err != nil {
+		if c.Get("HX-Request") == "true" {
+			return c.SendString(`<div class="toast error">` + err.Error() + `</div>`)
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if c.Get("HX-Request") == "true" {
+		c.Set("HX-Redirect", "/wallet")
+		return c.SendStatus(fiber.StatusOK)
 	}
 
 	return c.JSON(fiber.Map{
@@ -68,6 +93,7 @@ func (h *WalletHandler) GetTransactions(c fiber.Ctx) error {
 		out = append(out, fiber.Map{
 			"id":             t.ID,
 			"amount":         t.Amount,
+			"type":           t.Type,
 			"reason":         t.Reason,
 			"transaction_id": t.TransactionID,
 			"created_at":     t.CreatedAt,

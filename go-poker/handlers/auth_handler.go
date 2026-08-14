@@ -17,13 +17,48 @@ func NewAuthHandler(auth *services.AuthService) *AuthHandler {
 
 func (h *AuthHandler) Register(c fiber.Ctx) error {
 	var req services.RegisterRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	_ = c.Bind().Body(&req)
+	if req.Username == "" {
+		req.Username = c.FormValue("username")
+	}
+	if req.PhoneNumber == "" {
+		req.PhoneNumber = c.FormValue("phone_number")
+	}
+	if req.Password == "" {
+		req.Password = c.FormValue("password")
+	}
+	if req.ReferralCode == "" {
+		req.ReferralCode = c.FormValue("referral_code")
+	}
+	if req.Username == "" && req.PhoneNumber == "" {
+		_ = c.Bind().JSON(&req)
 	}
 
 	user, err := h.auth.Register(c.Context(), req)
 	if err != nil {
+		if c.Get("HX-Request") == "true" {
+			return c.SendString(`<div class="error-badge">` + err.Error() + `</div>`)
+		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	_, token, err := h.auth.Login(c.Context(), services.LoginRequest{
+		Login:    req.Username,
+		Password: req.Password,
+	})
+	if err == nil {
+		c.Cookie(&fiber.Cookie{
+			Name:     "poker_session",
+			Value:    token,
+			Expires:  time.Now().Add(24 * 7 * time.Hour),
+			HTTPOnly: true,
+			SameSite: "Lax",
+		})
+	}
+
+	if c.Get("HX-Request") == "true" {
+		c.Set("HX-Redirect", "/lobby")
+		return c.SendStatus(fiber.StatusCreated)
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
@@ -40,12 +75,22 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 
 func (h *AuthHandler) Login(c fiber.Ctx) error {
 	var req services.LoginRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	_ = c.Bind().Body(&req)
+	if req.Login == "" {
+		req.Login = c.FormValue("login")
+	}
+	if req.Password == "" {
+		req.Password = c.FormValue("password")
+	}
+	if req.Login == "" {
+		_ = c.Bind().JSON(&req)
 	}
 
 	user, token, err := h.auth.Login(c.Context(), req)
 	if err != nil {
+		if c.Get("HX-Request") == "true" {
+			return c.SendString(`<div class="error-badge">` + err.Error() + `</div>`)
+		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -56,6 +101,11 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 		HTTPOnly: true,
 		SameSite: "Lax",
 	})
+
+	if c.Get("HX-Request") == "true" {
+		c.Set("HX-Redirect", homeRouteFor(user))
+		return c.SendStatus(fiber.StatusOK)
+	}
 
 	return c.JSON(fiber.Map{
 		"message": "login successful",
@@ -105,6 +155,11 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 		Expires:  time.Now().Add(-1 * time.Hour),
 		HTTPOnly: true,
 	})
+
+	if c.Get("HX-Request") == "true" {
+		c.Set("HX-Redirect", "/login")
+		return c.SendStatus(fiber.StatusOK)
+	}
 
 	return c.JSON(fiber.Map{"message": "logged out successfully"})
 }
