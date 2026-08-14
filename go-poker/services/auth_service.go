@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	ErrUserExists        = errors.New("username or phone number already registered")
-	ErrInvalidCreds      = errors.New("invalid username/phone or password")
-	ErrUnauthorized      = errors.New("unauthorized")
-	ErrInvalidReferral   = errors.New("invalid referral code")
+	ErrUserExists      = errors.New("username or phone number already registered")
+	ErrInvalidCreds    = errors.New("invalid username/phone or password")
+	ErrUnauthorized    = errors.New("unauthorized")
+	ErrInvalidReferral = errors.New("invalid referral code")
 )
 
 type AuthService struct {
@@ -26,15 +26,15 @@ func NewAuthService(q *repository.Queries) *AuthService {
 }
 
 type RegisterRequest struct {
-	Username     string `json:"username"`
-	PhoneNumber  string `json:"phone_number"`
-	Password     string `json:"password"`
-	ReferralCode string `json:"referral_code,omitempty"`
+	Username     string `json:"username" form:"username"`
+	PhoneNumber  string `json:"phone_number" form:"phone_number"`
+	Password     string `json:"password" form:"password"`
+	ReferralCode string `json:"referral_code,omitempty" form:"referral_code"`
 }
 
 type LoginRequest struct {
-	Login    string `json:"login"`
-	Password string `json:"password"`
+	Login    string `json:"login" form:"login"`
+	Password string `json:"password" form:"password"`
 }
 
 func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*repository.User, error) {
@@ -42,7 +42,13 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*repos
 		return nil, errors.New("missing required fields")
 	}
 
-	_, err := s.q.GetUserByUsername(ctx, req.Username)
+	normalizedPhone, err := utilities.ValidateAndNormalizeEthiopianPhone(req.PhoneNumber)
+	if err != nil {
+		return nil, err
+	}
+	req.PhoneNumber = normalizedPhone
+
+	_, err = s.q.GetUserByUsername(ctx, req.Username)
 	if err == nil {
 		return nil, ErrUserExists
 	}
@@ -75,9 +81,10 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*repos
 		Username:     req.Username,
 		PhoneNumber:  req.PhoneNumber,
 		PasswordHash: passHash,
-		Wallet:       "0.00",
+		Wallet:       0,
 		ReferralCode: refCode,
 		ReferredBy:   referrerCode,
+		Role:         "player",
 	})
 	if err != nil {
 		return nil, err
@@ -103,6 +110,11 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*repository.
 	if err != nil {
 		user, err = s.q.GetUserByPhone(ctx, req.Login)
 		if err != nil {
+			if normPhone, normErr := utilities.ValidateAndNormalizeEthiopianPhone(req.Login); normErr == nil {
+				user, err = s.q.GetUserByPhone(ctx, normPhone)
+			}
+		}
+		if err != nil {
 			return nil, "", ErrInvalidCreds
 		}
 	}
@@ -124,6 +136,58 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*repository.
 	}
 
 	return &user, token, nil
+}
+
+// EnsureAdminUser upserts the admin account from configured credentials
+// (normally sourced from the environment / .env). Safe to call on every
+// startup: if the user already exists it's promoted to admin and its
+// password refreshed, otherwise it's created fresh.
+func (s *AuthService) EnsureAdminUser(ctx context.Context, username, phoneNumber, password string) (*repository.User, error) {
+	if username == "" || phoneNumber == "" || password == "" {
+		return nil, errors.New("admin username, phone, and password are required")
+	}
+
+	passHash, err := utilities.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := s.q.GetUserByUsername(ctx, username)
+	if err == nil {
+		if existing.Role != "admin" {
+			_ = s.q.UpdateUserRole(ctx, repository.UpdateUserRoleParams{Role: "admin", ID: existing.ID})
+		}
+		_ = s.q.UpdateUserPassword(ctx, repository.UpdateUserPasswordParams{PasswordHash: passHash, ID: existing.ID})
+		if existing.PhoneNumber != phoneNumber {
+			_ = s.q.UpdateUserPhone(ctx, repository.UpdateUserPhoneParams{PhoneNumber: phoneNumber, ID: existing.ID})
+		}
+		user, err := s.q.GetUserByID(ctx, existing.ID)
+		return &user, err
+	}
+
+	refCode, err := utilities.GenerateReferralCode()
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := s.q.CreateUser(ctx, repository.CreateUserParams{
+		Username:     username,
+		PhoneNumber:  phoneNumber,
+		PasswordHash: passHash,
+		Wallet:       0,
+		ReferralCode: refCode,
+		ReferredBy:   sql.NullString{},
+		Role:         "admin",
+	})
+	if err != nil {
+		return nil, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	user, err := s.q.GetUserByID(ctx, id)
+	return &user, err
 }
 
 func (s *AuthService) GetUserByToken(ctx context.Context, token string) (*repository.User, error) {
