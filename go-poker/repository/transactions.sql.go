@@ -8,16 +8,18 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const createTransaction = `-- name: CreateTransaction :execresult
-INSERT INTO transactions (user_id, amount, reason, transaction_id)
-VALUES (?, ?, ?, ?)
+INSERT INTO transactions (user_id, amount, type, reason, transaction_id)
+VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateTransactionParams struct {
 	UserID        int64
-	Amount        string
+	Amount        int64
+	Type          string
 	Reason        string
 	TransactionID string
 }
@@ -26,13 +28,80 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 	return q.db.ExecContext(ctx, createTransaction,
 		arg.UserID,
 		arg.Amount,
+		arg.Type,
 		arg.Reason,
 		arg.TransactionID,
 	)
 }
 
+const filterTransactions = `-- name: FilterTransactions :many
+SELECT t.id, t.user_id, t.amount, t.type, t.reason, t.transaction_id, t.created_at, u.username
+FROM transactions t
+JOIN users u ON u.id = t.user_id
+WHERE u.username LIKE ?
+  AND (? = '' OR t.type = ?)
+ORDER BY t.id DESC
+LIMIT ? OFFSET ?
+`
+
+type FilterTransactionsParams struct {
+	Username   string
+	TypeFilter string
+	Limit      int32
+	Offset     int32
+}
+
+type FilterTransactionsRow struct {
+	ID            int64
+	UserID        int64
+	Amount        int64
+	Type          string
+	Reason        string
+	TransactionID string
+	CreatedAt     time.Time
+	Username      string
+}
+
+func (q *Queries) FilterTransactions(ctx context.Context, arg FilterTransactionsParams) ([]FilterTransactionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, filterTransactions,
+		arg.Username,
+		arg.TypeFilter,
+		arg.TypeFilter,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FilterTransactionsRow
+	for rows.Next() {
+		var i FilterTransactionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Amount,
+			&i.Type,
+			&i.Reason,
+			&i.TransactionID,
+			&i.CreatedAt,
+			&i.Username,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTransactionsByUserID = `-- name: GetTransactionsByUserID :many
-SELECT id, user_id, amount, reason, transaction_id, created_at
+SELECT id, user_id, amount, type, reason, transaction_id, created_at
 FROM transactions
 WHERE user_id = ?
 ORDER BY id DESC LIMIT 50
@@ -51,6 +120,7 @@ func (q *Queries) GetTransactionsByUserID(ctx context.Context, userID int64) ([]
 			&i.ID,
 			&i.UserID,
 			&i.Amount,
+			&i.Type,
 			&i.Reason,
 			&i.TransactionID,
 			&i.CreatedAt,
@@ -66,4 +136,22 @@ func (q *Queries) GetTransactionsByUserID(ctx context.Context, userID int64) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const sumTransactionAmountByTypeSince = `-- name: SumTransactionAmountByTypeSince :one
+SELECT CAST(COALESCE(SUM(amount), 0) AS SIGNED) AS total
+FROM transactions
+WHERE type = ? AND created_at >= ?
+`
+
+type SumTransactionAmountByTypeSinceParams struct {
+	Type      string
+	CreatedAt time.Time
+}
+
+func (q *Queries) SumTransactionAmountByTypeSince(ctx context.Context, arg SumTransactionAmountByTypeSinceParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, sumTransactionAmountByTypeSince, arg.Type, arg.CreatedAt)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }

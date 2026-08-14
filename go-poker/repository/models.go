@@ -13,8 +13,8 @@ type GameSession struct {
 	ID               int64
 	TableID          string
 	HandNumber       int32
-	PotAmount        string
-	CommissionAmount string
+	PotAmount        int64
+	CommissionAmount int64
 	WinnerUserID     sql.NullInt64
 	WinnerName       string
 	HandName         string
@@ -74,10 +74,35 @@ type PokerPlayer struct {
 	StatsData      string
 }
 
+type PokerRoom struct {
+	ID         int64
+	RoomCode   string
+	RoomName   string
+	RoomType   string
+	HostUserID sql.NullInt64
+	BuyIn      int64
+	SmallBlind int32
+	BigBlind   int32
+	MaxPlayers int32
+	Status     string
+	CreatedAt  time.Time
+}
+
+type SiteSetting struct {
+	ID                        int32
+	RakeMode                  string
+	RakePercentage            float64
+	ReferralPercentagePctMode float64
+	ReferralPercentageSbMode  float64
+	CountdownSeconds          int32
+	UpdatedAt                 time.Time
+}
+
 type Transaction struct {
 	ID            int64
 	UserID        int64
-	Amount        string
+	Amount        int64
+	Type          string
 	Reason        string
 	TransactionID string
 	CreatedAt     time.Time
@@ -88,9 +113,10 @@ type User struct {
 	Username     string
 	PhoneNumber  string
 	PasswordHash string
-	Wallet       string
+	Wallet       int64
 	ReferralCode string
 	ReferredBy   sql.NullString
+	Role         string
 	CreatedAt    time.Time
 }
 

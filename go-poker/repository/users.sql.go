@@ -10,18 +10,30 @@ import (
 	"database/sql"
 )
 
+const countUsers = `-- name: CountUsers :one
+SELECT COUNT(*) FROM users WHERE role != 'house'
+`
+
+func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :execresult
-INSERT INTO users (username, phone_number, password_hash, wallet, referral_code, referred_by)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO users (username, phone_number, password_hash, wallet, referral_code, referred_by, role)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateUserParams struct {
 	Username     string
 	PhoneNumber  string
 	PasswordHash string
-	Wallet       string
+	Wallet       int64
 	ReferralCode string
 	ReferredBy   sql.NullString
+	Role         string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (sql.Result, error) {
@@ -32,11 +44,12 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (sql.Res
 		arg.Wallet,
 		arg.ReferralCode,
 		arg.ReferredBy,
+		arg.Role,
 	)
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
 WHERE id = ? LIMIT 1
 `
@@ -52,13 +65,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.Wallet,
 		&i.ReferralCode,
 		&i.ReferredBy,
+		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByPhone = `-- name: GetUserByPhone :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
 WHERE phone_number = ? LIMIT 1
 `
@@ -74,13 +88,14 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User,
 		&i.Wallet,
 		&i.ReferralCode,
 		&i.ReferredBy,
+		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByReferralCode = `-- name: GetUserByReferralCode :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
 WHERE referral_code = ? LIMIT 1
 `
@@ -96,13 +111,14 @@ func (q *Queries) GetUserByReferralCode(ctx context.Context, referralCode string
 		&i.Wallet,
 		&i.ReferralCode,
 		&i.ReferredBy,
+		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
 WHERE username = ? LIMIT 1
 `
@@ -118,9 +134,157 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Wallet,
 		&i.ReferralCode,
 		&i.ReferredBy,
+		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+FROM users
+WHERE role != 'house'
+ORDER BY id DESC
+LIMIT ? OFFSET ?
+`
+
+type ListUsersParams struct {
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.PhoneNumber,
+			&i.PasswordHash,
+			&i.Wallet,
+			&i.ReferralCode,
+			&i.ReferredBy,
+			&i.Role,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchUsers = `-- name: SearchUsers :many
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+FROM users
+WHERE role != 'house' AND (username LIKE ? OR phone_number LIKE ?)
+ORDER BY id DESC
+LIMIT ? OFFSET ?
+`
+
+type SearchUsersParams struct {
+	Username    string
+	PhoneNumber string
+	Limit       int32
+	Offset      int32
+}
+
+func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, searchUsers,
+		arg.Username,
+		arg.PhoneNumber,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.PhoneNumber,
+			&i.PasswordHash,
+			&i.Wallet,
+			&i.ReferralCode,
+			&i.ReferredBy,
+			&i.Role,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = ?
+WHERE id = ?
+`
+
+type UpdateUserPasswordParams struct {
+	PasswordHash string
+	ID           int64
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}
+
+const updateUserPhone = `-- name: UpdateUserPhone :exec
+UPDATE users
+SET phone_number = ?
+WHERE id = ?
+`
+
+type UpdateUserPhoneParams struct {
+	PhoneNumber string
+	ID          int64
+}
+
+func (q *Queries) UpdateUserPhone(ctx context.Context, arg UpdateUserPhoneParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserPhone, arg.PhoneNumber, arg.ID)
+	return err
+}
+
+const updateUserRole = `-- name: UpdateUserRole :exec
+UPDATE users
+SET role = ?
+WHERE id = ?
+`
+
+type UpdateUserRoleParams struct {
+	Role string
+	ID   int64
+}
+
+func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserRole, arg.Role, arg.ID)
+	return err
 }
 
 const updateUserWallet = `-- name: UpdateUserWallet :exec
@@ -130,7 +294,7 @@ WHERE id = ?
 `
 
 type UpdateUserWalletParams struct {
-	Wallet string
+	Wallet int64
 	ID     int64
 }
 

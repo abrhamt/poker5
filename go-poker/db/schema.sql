@@ -3,24 +3,29 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(64) NOT NULL UNIQUE,
     phone_number VARCHAR(32) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    wallet DECIMAL(15,2) NOT NULL DEFAULT 0.00,
-    referral_code VARCHAR(16) NOT NULL UNIQUE,
-    referred_by VARCHAR(16) DEFAULT NULL,
+    wallet BIGINT NOT NULL DEFAULT 0,
+    referral_code CHAR(6) NOT NULL UNIQUE,
+    referred_by CHAR(6) DEFAULT NULL,
+    role VARCHAR(16) NOT NULL DEFAULT 'player',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_users_username (username),
     INDEX idx_users_phone (phone_number),
-    INDEX idx_users_ref_code (referral_code)
+    INDEX idx_users_ref_code (referral_code),
+    INDEX idx_users_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS transactions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL,
-    amount DECIMAL(15,2) NOT NULL,
+    amount BIGINT NOT NULL,
+    type VARCHAR(24) NOT NULL DEFAULT 'other',
     reason VARCHAR(64) NOT NULL,
     transaction_id VARCHAR(10) NOT NULL UNIQUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_tx_user (user_id),
     INDEX idx_tx_code (transaction_id),
+    INDEX idx_tx_type (type),
+    INDEX idx_tx_created (created_at),
     CONSTRAINT fk_tx_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -28,8 +33,8 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     table_id VARCHAR(32) NOT NULL,
     hand_number INT NOT NULL,
-    pot_amount DECIMAL(15,2) NOT NULL,
-    commission_amount DECIMAL(15,2) NOT NULL,
+    pot_amount BIGINT NOT NULL,
+    commission_amount BIGINT NOT NULL,
     winner_user_id BIGINT DEFAULT NULL,
     winner_name VARCHAR(64) NOT NULL,
     hand_name VARCHAR(64) NOT NULL,
@@ -98,4 +103,30 @@ CREATE TABLE IF NOT EXISTS poker_player (
     stats_data TEXT NOT NULL,
     UNIQUE KEY uq_game_seat (game_id, seat_index),
     CONSTRAINT fk_player_game FOREIGN KEY (game_id) REFERENCES poker_game(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS poker_rooms (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    room_code VARCHAR(16) NOT NULL UNIQUE,
+    room_name VARCHAR(64) NOT NULL,
+    room_type VARCHAR(16) NOT NULL DEFAULT 'public',
+    host_user_id BIGINT DEFAULT NULL,
+    buy_in BIGINT NOT NULL DEFAULT 20,
+    small_blind INT NOT NULL DEFAULT 10,
+    big_blind INT NOT NULL DEFAULT 20,
+    max_players INT NOT NULL DEFAULT 6,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_room_code (room_code),
+    INDEX idx_room_type_status (room_type, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS site_settings (
+    id INT PRIMARY KEY DEFAULT 1,
+    rake_mode VARCHAR(16) NOT NULL DEFAULT 'percentage',
+    rake_percentage DOUBLE NOT NULL DEFAULT 5,
+    referral_percentage_pct_mode DOUBLE NOT NULL DEFAULT 10,
+    referral_percentage_sb_mode DOUBLE NOT NULL DEFAULT 10,
+    countdown_seconds INT NOT NULL DEFAULT 15,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

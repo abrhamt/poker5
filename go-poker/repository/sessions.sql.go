@@ -19,8 +19,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 type CreateGameSessionParams struct {
 	TableID          string
 	HandNumber       int32
-	PotAmount        string
-	CommissionAmount string
+	PotAmount        int64
+	CommissionAmount int64
 	WinnerUserID     sql.NullInt64
 	WinnerName       string
 	HandName         string
@@ -107,10 +107,10 @@ func (q *Queries) GetGameSessionsByTable(ctx context.Context, tableID string) ([
 }
 
 const getUserBySessionToken = `-- name: GetUserBySessionToken :one
-SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.created_at
+SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at
 FROM user_sessions s
 JOIN users u ON s.user_id = u.id
-WHERE s.session_token = ? AND s.expires_at > NOW() LIMIT 1
+WHERE s.session_token = ? AND s.expires_at > CURRENT_TIMESTAMP LIMIT 1
 `
 
 func (q *Queries) GetUserBySessionToken(ctx context.Context, sessionToken string) (User, error) {
@@ -124,6 +124,7 @@ func (q *Queries) GetUserBySessionToken(ctx context.Context, sessionToken string
 		&i.Wallet,
 		&i.ReferralCode,
 		&i.ReferredBy,
+		&i.Role,
 		&i.CreatedAt,
 	)
 	return i, err
