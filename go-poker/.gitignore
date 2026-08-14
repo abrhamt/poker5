@@ -1,2 +1,3 @@
 poker.db
 *.db
+.env
