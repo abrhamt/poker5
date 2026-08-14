@@ -27,8 +27,11 @@ func TestGenerateReferralCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateReferralCode error: %v", err)
 	}
-	if len(code) != 8 {
-		t.Fatalf("expected referral code length 8, got %d (%s)", len(code), code)
+	if len(code) != 6 {
+		t.Fatalf("expected referral code length 6, got %d (%s)", len(code), code)
+	}
+	if code[0] == '0' {
+		t.Fatalf("referral code must not start with 0, got %s", code)
 	}
 }
 
@@ -43,5 +46,15 @@ func TestPasswordHashing(t *testing.T) {
 	}
 	if CheckPassword("wrongpass", hash) {
 		t.Fatalf("CheckPassword succeeded for wrong password")
+	}
+}
+
+func TestGenerateRoomCode(t *testing.T) {
+	code, err := GenerateRoomCode()
+	if err != nil {
+		t.Fatalf("GenerateRoomCode error: %v", err)
+	}
+	if len(code) != 5 {
+		t.Fatalf("expected 5-digit room code, got %d (%s)", len(code), code)
 	}
 }
