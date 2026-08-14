@@ -134,6 +134,7 @@ func (e *GameEngine) doShowdown() {
 			HandName: e.Game.LastWinner.HandName,
 			Cards:    e.Game.LastWinner.WinningCards,
 		}}
+		e.Game.Payouts = []Payout{{PotIndex: 0, Winner: winner.Name, Amount: e.Game.Pot}}
 		e.beginIntermission()
 		e.Game.Pot = 0
 		e.saveState()
@@ -148,6 +149,7 @@ func (e *GameEngine) doShowdown() {
 func (e *GameEngine) resolveSidePots(pots []sidePot, active []*Player, hadShowdown bool) {
 	winnersSet := map[*Player]bool{}
 	awards := []PotAward{}
+	payouts := []Payout{}
 	var headlineWinner *Winner
 
 	for potIdx, sp := range pots {
@@ -163,6 +165,7 @@ func (e *GameEngine) resolveSidePots(pots []sidePot, active []*Player, hadShowdo
 		if len(eligible) == 1 {
 			sole := eligible[0]
 			sole.Chips += sp.amount
+			payouts = append(payouts, Payout{PotIndex: potIdx, Winner: sole.Name, Amount: sp.amount})
 			if !winnersSet[sole] {
 				sole.Stats.HandsWon++
 				if hadShowdown {
@@ -221,6 +224,7 @@ func (e *GameEngine) resolveSidePots(pots []sidePot, active []*Player, hadShowdo
 			share := sp.amount / len(winners)
 			for _, w := range winners {
 				w.Chips += share
+				payouts = append(payouts, Payout{PotIndex: potIdx, Winner: w.Name, Amount: share})
 				if !winnersSet[w] {
 					w.Stats.HandsWon++
 					w.Stats.ShowdownsWon++
@@ -252,13 +256,12 @@ func (e *GameEngine) resolveSidePots(pots []sidePot, active []*Player, hadShowdo
 	}
 
 	e.Game.PotAwards = awards
+	e.Game.Payouts = payouts
 	e.Game.LastWinner = headlineWinner
 	e.beginIntermission()
 	e.Game.Pot = 0
 	e.saveState()
 }
-
-
 
 func cardCodesFor(p *Player, board []string) []string {
 	if p == nil || p.Cards[0] == "" || p.Cards[0] == "1B" {

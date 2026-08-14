@@ -109,7 +109,86 @@ func TestSidePots(t *testing.T) {
 	if pots[1].amount != 400 { // 200 * 2 players
 		t.Errorf("pot1: expected 400, got %d", pots[1].amount)
 	}
-	if pots[2].amount != 300 { // 300 * 1 player
+	if pots[2].amount != 300 {
 		t.Errorf("pot2: expected 300, got %d", pots[2].amount)
+	}
+}
+
+func TestEngineTwoHumanPhaseAdvancement(t *testing.T) {
+	storage := NewMemoryStorage()
+	state := NewGameState(storage)
+	eng, _, err := state.GetOrCreate("th1")
+	if err != nil {
+		t.Fatalf("get or create: %v", err)
+	}
+	eng.InitGame([]string{"Alice", "Bob"})
+	if !eng.StartHand() {
+		t.Fatalf("StartHand returned false")
+	}
+
+	if eng.Game.Phase != "preflop" {
+		t.Fatalf("expected preflop, got %s", eng.Game.Phase)
+	}
+
+	p1 := eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p1, "call", 10) {
+		t.Fatalf("p1 call failed")
+	}
+
+	p2 := eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p2, "check", 0) {
+		t.Fatalf("p2 check failed")
+	}
+
+	if eng.Game.Phase != "flop" {
+		t.Fatalf("expected flop after preflop checks, got %s", eng.Game.Phase)
+	}
+	if len(eng.Game.CommunityCards) != 3 {
+		t.Fatalf("expected 3 flop community cards, got %d", len(eng.Game.CommunityCards))
+	}
+
+	p1 = eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p1, "check", 0) {
+		t.Fatalf("p1 flop check failed")
+	}
+	p2 = eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p2, "check", 0) {
+		t.Fatalf("p2 flop check failed")
+	}
+
+	if eng.Game.Phase != "turn" {
+		t.Fatalf("expected turn after flop checks, got %s", eng.Game.Phase)
+	}
+	if len(eng.Game.CommunityCards) != 4 {
+		t.Fatalf("expected 4 turn community cards, got %d", len(eng.Game.CommunityCards))
+	}
+
+	p1 = eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p1, "check", 0) {
+		t.Fatalf("p1 turn check failed")
+	}
+	p2 = eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p2, "check", 0) {
+		t.Fatalf("p2 turn check failed")
+	}
+
+	if eng.Game.Phase != "river" {
+		t.Fatalf("expected river after turn checks, got %s", eng.Game.Phase)
+	}
+	if len(eng.Game.CommunityCards) != 5 {
+		t.Fatalf("expected 5 river community cards, got %d", len(eng.Game.CommunityCards))
+	}
+
+	p1 = eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p1, "check", 0) {
+		t.Fatalf("p1 river check failed")
+	}
+	p2 = eng.Players[eng.CurrentPlayerIx%2].Name
+	if !eng.HumanAction(p2, "check", 0) {
+		t.Fatalf("p2 river check failed")
+	}
+
+	if !eng.Game.Intermission || eng.Game.LastWinner == nil {
+		t.Fatalf("expected showdown intermission after river, got intermission=%v, winner=%v", eng.Game.Intermission, eng.Game.LastWinner)
 	}
 }

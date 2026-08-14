@@ -25,6 +25,16 @@ type PotAward struct {
 	Cards    []string `json:"cards"`
 }
 
+// Payout records a single chip credit to a single player from a single pot,
+// including split-pot ties where PotAward only records one of the winners.
+// It's the hook point callers use to apply rake/referral commission to each
+// individual share of a hand's winnings.
+type Payout struct {
+	PotIndex int    `json:"pot_index"`
+	Winner   string `json:"winner"`
+	Amount   int    `json:"amount"`
+}
+
 const MaxNotifications = 8
 
 const (
@@ -77,6 +87,7 @@ type Player struct {
 	TotalBet       int       `json:"total_bet"`
 	Folded         bool      `json:"folded"`
 	AllIn          bool      `json:"all_in"`
+	HasActed       bool      `json:"has_acted"`
 	IsDealer       bool      `json:"dealer"`
 	IsSmallBlind   bool      `json:"small_blind"`
 	IsBigBlind     bool      `json:"big_blind"`
@@ -88,35 +99,36 @@ type Player struct {
 }
 
 type Game struct {
-	ID                    int64     `json:"id,omitempty"`
-	TableID               string    `json:"table_id"`
-	Phase                 string    `json:"phase"`
-	PhaseIndex            int       `json:"-"`
-	Pot                   int       `json:"pot"`
-	CurrentBet            int       `json:"current_bet"`
-	LastRaise             int       `json:"last_raise"`
-	SmallBlind            int       `json:"small_blind"`
-	BigBlind              int       `json:"big_blind"`
-	RaisesThisRound       int       `json:"raises_this_round"`
-	DealerOrbitCount      int       `json:"dealer_orbit_count"`
-	GameStarted           bool      `json:"game_started"`
-	GameFinished          bool      `json:"game_finished"`
-	OpenCardsMode         bool      `json:"open_cards_mode"`
-	SpectatorMode         bool      `json:"spectator_mode"`
-	InitialDealerName     *string   `json:"initial_dealer_name,omitempty"`
-	Deck                  []string  `json:"-"`
-	CardGraveyard         []string  `json:"-"`
-	CommunityCards        []string  `json:"community_cards"`
-	CurrentPlayerIdx      int       `json:"-"`
-	TotalHands            int       `json:"total_hands"`
-	CreatedAt             time.Time `json:"created_at,omitempty"`
-	UpdatedAt             time.Time `json:"updated_at,omitempty"`
-	Version               int       `json:"version"`
-	Notifications         []string  `json:"notifications"`
-	Intermission          bool      `json:"intermission"`
-	LastWinner            *Winner   `json:"last_winner,omitempty"`
+	ID                    int64      `json:"id,omitempty"`
+	TableID               string     `json:"table_id"`
+	Phase                 string     `json:"phase"`
+	PhaseIndex            int        `json:"-"`
+	Pot                   int        `json:"pot"`
+	CurrentBet            int        `json:"current_bet"`
+	LastRaise             int        `json:"last_raise"`
+	SmallBlind            int        `json:"small_blind"`
+	BigBlind              int        `json:"big_blind"`
+	RaisesThisRound       int        `json:"raises_this_round"`
+	DealerOrbitCount      int        `json:"dealer_orbit_count"`
+	GameStarted           bool       `json:"game_started"`
+	GameFinished          bool       `json:"game_finished"`
+	OpenCardsMode         bool       `json:"open_cards_mode"`
+	SpectatorMode         bool       `json:"spectator_mode"`
+	InitialDealerName     *string    `json:"initial_dealer_name,omitempty"`
+	Deck                  []string   `json:"-"`
+	CardGraveyard         []string   `json:"-"`
+	CommunityCards        []string   `json:"community_cards"`
+	CurrentPlayerIdx      int        `json:"-"`
+	TotalHands            int        `json:"total_hands"`
+	CreatedAt             time.Time  `json:"created_at,omitempty"`
+	UpdatedAt             time.Time  `json:"updated_at,omitempty"`
+	Version               int        `json:"version"`
+	Notifications         []string   `json:"notifications"`
+	Intermission          bool       `json:"intermission"`
+	LastWinner            *Winner    `json:"last_winner,omitempty"`
 	PotAwards             []PotAward `json:"pot_awards,omitempty"`
-	IntermissionStartedAt int64     `json:"intermission_started_at,omitempty"`
+	Payouts               []Payout   `json:"-"`
+	IntermissionStartedAt int64      `json:"intermission_started_at,omitempty"`
 }
 
 func NewGame(tableID string) *Game {

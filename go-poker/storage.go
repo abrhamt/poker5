@@ -12,8 +12,9 @@ import (
 )
 
 type SQLiteStorage struct {
-	db *sql.DB
-	mu sync.Mutex
+	db    *sql.DB
+	owned bool
+	mu    sync.Mutex
 }
 
 func NewSQLiteStorage(dsn string) (*SQLiteStorage, error) {
@@ -25,10 +26,26 @@ func NewSQLiteStorage(dsn string) (*SQLiteStorage, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
-	return &SQLiteStorage{db: db}, nil
+	return &SQLiteStorage{db: db, owned: true}, nil
 }
 
-func (s *SQLiteStorage) Close() error { return s.db.Close() }
+// NewSQLiteStorageFromDB wraps an already-open *sql.DB (e.g. the app's main
+// SQLite connection) instead of opening a dedicated one, so live game state
+// persists in the same database file as everything else. The passed-in db
+// is not closed by Close() - the caller retains ownership.
+func NewSQLiteStorageFromDB(db *sql.DB) (*SQLiteStorage, error) {
+	if _, err := db.Exec(Schema); err != nil {
+		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+	return &SQLiteStorage{db: db, owned: false}, nil
+}
+
+func (s *SQLiteStorage) Close() error {
+	if !s.owned {
+		return nil
+	}
+	return s.db.Close()
+}
 
 const Schema = `
 CREATE TABLE IF NOT EXISTS poker_game (
@@ -65,6 +82,7 @@ CREATE TABLE IF NOT EXISTS poker_game (
 CREATE TABLE IF NOT EXISTS poker_player (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL DEFAULT 0,
     name TEXT NOT NULL,
     seat_index INTEGER NOT NULL,
     is_bot INTEGER NOT NULL DEFAULT 0,
@@ -306,11 +324,12 @@ func (s *SQLiteStorage) upsertPlayers(gameID int64, players []*Player) error {
 		}
 		_, err := s.db.Exec(`
             INSERT INTO poker_player
-            (game_id, name, seat_index, is_bot, chips, round_bet, total_bet,
+            (game_id, user_id, name, seat_index, is_bot, chips, round_bet, total_bet,
              folded, all_in, is_dealer, is_small_blind, is_big_blind,
              card1, card2, win_probability, stats_data)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(game_id, seat_index) DO UPDATE SET
+                user_id=excluded.user_id,
                 name=excluded.name,
                 is_bot=excluded.is_bot,
                 chips=excluded.chips,
@@ -325,7 +344,7 @@ func (s *SQLiteStorage) upsertPlayers(gameID int64, players []*Player) error {
                 card2=excluded.card2,
                 win_probability=excluded.win_probability,
                 stats_data=excluded.stats_data`,
-			gameID, p.Name, p.SeatIndex, boolInt(p.IsBot), p.Chips, p.RoundBet, p.TotalBet,
+			gameID, p.ID, p.Name, p.SeatIndex, boolInt(p.IsBot), p.Chips, p.RoundBet, p.TotalBet,
 			boolInt(p.Folded), boolInt(p.AllIn), boolInt(p.IsDealer), boolInt(p.IsSmallBlind),
 			boolInt(p.IsBigBlind), card1, card2, winProb, string(statsJSON))
 		if err != nil {
@@ -336,7 +355,7 @@ func (s *SQLiteStorage) upsertPlayers(gameID int64, players []*Player) error {
 }
 
 func (s *SQLiteStorage) loadPlayers(gameID int64) ([]*Player, error) {
-	rows, err := s.db.Query(`SELECT id, name, seat_index, is_bot, chips, round_bet,
+	rows, err := s.db.Query(`SELECT user_id, name, seat_index, is_bot, chips, round_bet,
         total_bet, folded, all_in, is_dealer, is_small_blind, is_big_blind,
         card1, card2, win_probability, stats_data
         FROM poker_player WHERE game_id = ? ORDER BY seat_index`, gameID)

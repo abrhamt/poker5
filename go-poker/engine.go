@@ -8,7 +8,9 @@ import (
 
 var timeNow = time.Now
 
-const MaxSeats = 6
+// MaxSeats is the engine's hard ceiling; individual tables enforce their own
+// (smaller) MaxPlayers from the room config (6 for public, 2-9 for private).
+const MaxSeats = 9
 
 const IntermissionDuration = 5 * time.Second
 

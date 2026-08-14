@@ -1,90 +1,16 @@
 package poker
 
 import (
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"path/filepath"
-
-	"github.com/gofiber/fiber/v3"
-
-	"github.com/zuse/poker5/go-poker/handlers"
-	"github.com/zuse/poker5/go-poker/repository"
-	"github.com/zuse/poker5/go-poker/services"
 )
-
-type FiberServer struct {
-	App         *fiber.App
-	DB          *sql.DB
-	Queries     *repository.Queries
-	AuthService *services.AuthService
-	Wallet      *services.WalletService
-	SSE         *services.SSEHub
-}
-
-func NewFiberServer(db *sql.DB) *FiberServer {
-	app := fiber.New(fiber.Config{
-		AppName: "Go Poker API",
-	})
-
-	q := repository.New(db)
-	authSvc := services.NewAuthService(q)
-	walletSvc := services.NewWalletService(q)
-	sseHub := services.NewSSEHub()
-
-	authHandler := handlers.NewAuthHandler(authSvc)
-	walletHandler := handlers.NewWalletHandler(walletSvc, authSvc)
-	sseHandler := handlers.NewSSEHandler(sseHub)
-	gameHandler := handlers.NewGameHandler(sseHub)
-
-	s := &FiberServer{
-		App:         app,
-		DB:          db,
-		Queries:     q,
-		AuthService: authSvc,
-		Wallet:      walletSvc,
-		SSE:         sseHub,
-	}
-
-	app.Get("/health", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok", "service": "go-poker"})
-	})
-
-	api := app.Group("/api")
-
-	auth := api.Group("/auth")
-	auth.Post("/register", authHandler.Register)
-	auth.Post("/login", authHandler.Login)
-	auth.Post("/logout", authHandler.Logout)
-	auth.Get("/me", authHandler.Me)
-
-	wallet := api.Group("/wallet")
-	wallet.Post("/deposit", walletHandler.Deposit)
-	wallet.Get("/transactions", walletHandler.GetTransactions)
-
-	api.Get("/events", sseHandler.HandleEvents)
-	api.Get("/state", gameHandler.GetState)
-	api.Post("/action", gameHandler.Action)
-
-	staticDir, _ := filepath.Abs("static")
-	app.Get("/static/*", func(c fiber.Ctx) error {
-		return c.SendFile(filepath.Join(staticDir, c.Params("*")))
-	})
-
-	return s
-}
-
-func (s *FiberServer) Listen(addr string) error {
-	fmt.Printf("Fiber v3 poker server listening on %s\n", addr)
-	return s.App.Listen(addr)
-}
 
 type Server struct {
 	State              *GameState
 	wpEnabled          bool
 	wpServiceConfigured bool
 }
+
 
 func NewServer(state *GameState, staticDir, templateDir string) (*Server, error) {
 	return &Server{State: state}, nil

@@ -2,22 +2,27 @@ package poker
 
 import (
 	"fmt"
-	"strings"
 )
 
 func (e *GameEngine) StartHand() bool {
 	e.Game.GameStarted = true
 	e.Game.TotalHands++
 	e.Game.PhaseIndex = 0
+	e.Game.Phase = Phases[0]
 	e.Game.Pot = 0
 	e.Game.CurrentBet = 0
 	e.Game.LastRaise = e.Game.BigBlind
 	e.Game.RaisesThisRound = 0
 	e.Game.CommunityCards = []string{}
+	e.Game.Intermission = false
+	e.Game.LastWinner = nil
+	e.Game.PotAwards = nil
+	e.Game.Payouts = nil
 
 	for _, p := range e.Players {
 		p.Folded = false
 		p.AllIn = false
+		p.HasActed = false
 		p.TotalBet = 0
 		p.RoundBet = 0
 		p.WinProbability = nil
@@ -29,16 +34,18 @@ func (e *GameEngine) StartHand() bool {
 	for _, p := range e.Players {
 		if p.Chips > 0 {
 			active = append(active, p)
-		}
-	}
-	for _, p := range e.Players {
-		if p.Chips <= 0 {
-			e.addNotification(fmt.Sprintf("%s is out of the game!", p.Name))
+		} else {
+			e.addNotification(fmt.Sprintf("%s is out of chips!", p.Name))
 		}
 	}
 	e.Players = active
 
-	if len(e.Players) == 0 {
+	if len(e.Players) < 2 {
+		if len(e.Players) == 1 {
+			e.addNotification(fmt.Sprintf("%s wins the game!", e.Players[0].Name))
+			e.Game.GameFinished = true
+		}
+		e.saveState()
 		return false
 	}
 
@@ -50,14 +57,6 @@ func (e *GameEngine) StartHand() bool {
 	}
 	e.Game.OpenCardsMode = humanCount == 1
 	e.Game.SpectatorMode = humanCount == 0
-
-	if len(e.Players) == 1 {
-		champion := e.Players[0]
-		e.addNotification(fmt.Sprintf("%s wins the game!", champion.Name))
-		e.Game.GameFinished = true
-		e.saveState()
-		return false
-	}
 
 	if len(e.Game.Deck) < len(e.Players)*2+5 {
 		e.Game.Deck = ShuffleDeck(FullDeck)
@@ -135,25 +134,24 @@ func (e *GameEngine) advancePhase() {
 		e.doShowdown()
 		return
 	}
+
 	e.Game.PhaseIndex++
-	if e.Game.PhaseIndex >= len(Phases) {
+	if e.Game.PhaseIndex >= len(Phases)-1 {
 		e.doShowdown()
 		return
 	}
-	phase := Phases[e.Game.PhaseIndex]
-	switch phase {
+
+	e.Game.Phase = Phases[e.Game.PhaseIndex]
+	switch e.Game.Phase {
 	case "flop":
 		e.dealCommunityCards(3)
-		e.addNotification("Flop (3 cards) dealt.")
+		e.addNotification("Flop dealt.")
 	case "turn":
 		e.dealCommunityCards(1)
-		e.addNotification("Turn (4th card) dealt.")
+		e.addNotification("Turn dealt.")
 	case "river":
 		e.dealCommunityCards(1)
-		e.addNotification("River (5th card) dealt.")
-	case "showdown":
-		e.doShowdown()
-		return
+		e.addNotification("River dealt.")
 	}
 	e.saveState()
 	e.startBettingRound()
@@ -169,6 +167,16 @@ func (e *GameEngine) dealCommunityCards(count int) {
 }
 
 func (e *GameEngine) startBettingRound() {
+	if e.Game.PhaseIndex >= len(Phases)-1 {
+		e.doShowdown()
+		return
+	}
+
+	e.Game.Phase = Phases[e.Game.PhaseIndex]
+	for _, p := range e.Players {
+		p.HasActed = false
+	}
+
 	if e.Game.PhaseIndex > 0 {
 		e.Game.CurrentBet = 0
 		e.Game.LastRaise = e.Game.BigBlind
@@ -183,26 +191,42 @@ func (e *GameEngine) startBettingRound() {
 			active = append(active, p)
 		}
 	}
+	if len(active) <= 1 {
+		e.doShowdown()
+		return
+	}
+
 	actionable := []*Player{}
 	for _, p := range active {
 		if !p.AllIn {
 			actionable = append(actionable, p)
 		}
 	}
-	if len(active) <= 1 || len(actionable) <= 1 {
+	if len(actionable) <= 1 && e.isAllInSettled() {
 		e.advancePhase()
 		return
 	}
 
 	if e.Game.PhaseIndex == 0 {
-		bbIdx := 0
-		for i, p := range e.Players {
-			if p.IsBigBlind {
-				bbIdx = i
-				break
+		if len(e.Players) == 2 {
+			dealerIdx := 0
+			for i, p := range e.Players {
+				if p.IsDealer {
+					dealerIdx = i
+					break
+				}
 			}
+			e.CurrentPlayerIx = dealerIdx
+		} else {
+			bbIdx := 0
+			for i, p := range e.Players {
+				if p.IsBigBlind {
+					bbIdx = i
+					break
+				}
+			}
+			e.CurrentPlayerIx = (bbIdx + 1) % len(e.Players)
 		}
-		e.CurrentPlayerIx = (bbIdx + 1) % len(e.Players)
 	} else {
 		dealerIdx := 0
 		for i, p := range e.Players {
@@ -213,63 +237,100 @@ func (e *GameEngine) startBettingRound() {
 		}
 		e.CurrentPlayerIx = (dealerIdx + 1) % len(e.Players)
 	}
+
+	e.findNextActionablePlayer()
 	e.Game.RaisesThisRound = 0
 	e.saveState()
 }
 
-func (e *GameEngine) AdvanceOneStep() bool {
-	if e.Game.GameFinished {
-		return false
+func (e *GameEngine) isAllInSettled() bool {
+	var maxBet int
+	for _, p := range e.Players {
+		if !p.Folded && p.RoundBet > maxBet {
+			maxBet = p.RoundBet
+		}
 	}
-	if e.Game.Intermission {
+	for _, p := range e.Players {
+		if !p.Folded && !p.AllIn && p.RoundBet < maxBet {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *GameEngine) isBettingRoundComplete() bool {
+	activeCount := 0
+	for _, p := range e.Players {
+		if !p.Folded {
+			activeCount++
+		}
+	}
+	if activeCount <= 1 {
 		return true
+	}
+
+	actionableCount := 0
+	for _, p := range e.Players {
+		if !p.Folded && !p.AllIn {
+			actionableCount++
+			if !p.HasActed || p.RoundBet < e.Game.CurrentBet {
+				return false
+			}
+		}
+	}
+
+	if actionableCount <= 1 && e.isAllInSettled() {
+		return true
+	}
+	return actionableCount > 0
+}
+
+func (e *GameEngine) findNextActionablePlayer() {
+	n := len(e.Players)
+	if n == 0 {
+		return
+	}
+	for i := 0; i < n; i++ {
+		idx := (e.CurrentPlayerIx + i) % n
+		p := e.Players[idx]
+		if !p.Folded && !p.AllIn {
+			e.CurrentPlayerIx = idx
+			return
+		}
+	}
+}
+
+func (e *GameEngine) AdvanceOneStep() bool {
+	if e.Game.GameFinished || e.Game.Intermission {
+		return false
 	}
 	if !e.Game.GameStarted {
 		e.StartHand()
 		return true
 	}
-	active := []*Player{}
-	for _, p := range e.Players {
-		if !p.Folded {
-			active = append(active, p)
-		}
-	}
-	actionable := []*Player{}
-	for _, p := range active {
-		if !p.AllIn {
-			actionable = append(actionable, p)
-		}
-	}
-	if len(active) <= 1 || len(actionable) == 0 {
+	if e.isBettingRoundComplete() {
 		e.advancePhase()
 		return true
-	}
-	idx := e.CurrentPlayerIx % len(e.Players)
-	player := e.Players[idx]
-	if player.Folded || player.AllIn {
-		e.CurrentPlayerIx++
-		e.saveState()
-		return true
-	}
-	if player.RoundBet >= e.Game.CurrentBet {
-		cycles := countActionable(e.Players)
-		if cycleCheck(e, idx, cycles) {
-			e.advancePhase()
-			return true
-		}
 	}
 	e.processCurrentPlayer()
 	return true
 }
 
 func (e *GameEngine) processCurrentPlayer() {
-	if e.Game.GameFinished {
+	if e.Game.GameFinished || e.Game.Intermission || len(e.Players) == 0 {
 		return
 	}
 	idx := e.CurrentPlayerIx % len(e.Players)
 	player := e.Players[idx]
 
-	if player.IsBot {
+	if player.Folded || player.AllIn {
+		e.CurrentPlayerIx++
+		e.findNextActionablePlayer()
+		idx = e.CurrentPlayerIx % len(e.Players)
+		player = e.Players[idx]
+	}
+
+	if player.IsBot && !player.Folded && !player.AllIn {
 		e.processBotAction(player)
 	} else {
 		e.saveState()
@@ -294,13 +355,20 @@ func (e *GameEngine) processBotAction(player *Player) {
 	}
 	decision := ChooseBotAction(player, ctx)
 	e.applyDecision(player, decision)
-	e.CurrentPlayerIx++
-	e.saveState()
+
+	if e.isBettingRoundComplete() {
+		e.advancePhase()
+	} else {
+		e.CurrentPlayerIx++
+		e.findNextActionablePlayer()
+		e.saveState()
+	}
 }
 
 func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 	needToCall := e.Game.CurrentBet - player.RoundBet
 	e.updateStats(player, decision.Action)
+	player.HasActed = true
 
 	switch decision.Action {
 	case "fold":
@@ -310,7 +378,7 @@ func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 		e.addNotification(fmt.Sprintf("%s checked.", player.Name))
 	case "call":
 		amt := decision.Amount
-		if amt == 0 {
+		if amt <= 0 {
 			amt = needToCall
 		}
 		bet := e.placeBet(player, amt)
@@ -318,7 +386,7 @@ func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 		e.addNotification(fmt.Sprintf("%s called %d.", player.Name, bet))
 	case "raise":
 		bet := decision.Amount
-		if bet == 0 {
+		if bet <= 0 {
 			bet = needToCall + e.Game.LastRaise
 		}
 		amt := e.placeBet(player, bet)
@@ -326,103 +394,46 @@ func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 			e.Game.CurrentBet = player.RoundBet
 			e.Game.LastRaise = amt - needToCall
 			e.Game.RaisesThisRound++
+			for _, other := range e.Players {
+				if other.Name != player.Name && !other.Folded && !other.AllIn {
+					other.HasActed = false
+				}
+			}
 		}
 		e.Game.Pot += amt
 		e.addNotification(fmt.Sprintf("%s raised to %d.", player.Name, amt))
 	}
 }
 
-func countActionable(players []*Player) int {
-	cnt := 0
-	for _, p := range players {
-		if !p.Folded && !p.AllIn {
-			cnt++
-		}
-	}
-	return cnt
-}
-
 func (e *GameEngine) HumanAction(playerName, action string, amount int) bool {
 	var player *Player
-	for _, p := range e.Players {
+	var pIdx int
+	for i, p := range e.Players {
 		if p.Name == playerName && !p.Folded {
 			player = p
+			pIdx = i
 			break
 		}
 	}
-	if player == nil || player.IsBot || player.AllIn {
+	if player == nil || player.AllIn {
+		return false
+	}
+	if (e.CurrentPlayerIx % len(e.Players)) != pIdx {
 		return false
 	}
 
 	decision := &BotDecision{Action: action, Amount: amount}
 	e.applyDecision(player, decision)
-	e.CurrentPlayerIx++
-	e.saveState()
+
+	if e.isBettingRoundComplete() {
+		e.advancePhase()
+	} else {
+		e.CurrentPlayerIx++
+		e.findNextActionablePlayer()
+		e.saveState()
+		e.processCurrentPlayer()
+	}
 	return true
-}
-
-func (e *GameEngine) AddOrRenameSeat(name string, seatIndex *int) error {
-	if name == "" {
-		return fmt.Errorf("name required")
-	}
-	if e.Game.GameStarted && !e.Game.Intermission && !e.Game.GameFinished {
-		return fmt.Errorf("cannot alter seats mid-hand")
-	}
-	isBot := strings.HasPrefix(strings.ToLower(name), "bot")
-	if seatIndex != nil {
-		for _, p := range e.Players {
-			if p.SeatIndex == *seatIndex {
-				p.Name = name
-				p.IsBot = isBot
-				e.saveState()
-				return nil
-			}
-		}
-	}
-	if len(e.Players) >= MaxSeats {
-		return fmt.Errorf("table full")
-	}
-	idx := len(e.Players)
-	if seatIndex != nil {
-		idx = *seatIndex
-	}
-	p := &Player{
-		Name:      name,
-		SeatIndex: idx,
-		IsBot:     isBot,
-		Chips:     StartingChips,
-		Cards:     [2]string{"1B", "1B"},
-		Stats:     NewStats(),
-		BotLine:   NewBotLine(),
-	}
-	e.Players = append(e.Players, p)
-	e.saveState()
-	return nil
-}
-
-func (e *GameEngine) RemoveSeat(seatIndex int) error {
-	for i, p := range e.Players {
-		if p.SeatIndex == seatIndex {
-			e.Players = append(e.Players[:i], e.Players[i+1:]...)
-			e.saveState()
-			return nil
-		}
-	}
-	return fmt.Errorf("seat %d is empty", seatIndex)
-}
-
-func cycleCheck(e *GameEngine, idx, cycles int) bool {
-	player := e.Players[idx%len(e.Players)]
-	if player.Folded || player.AllIn {
-		return false
-	}
-	if player.RoundBet >= e.Game.CurrentBet {
-		if e.Game.PhaseIndex > 0 && e.Game.CurrentBet == 0 {
-			return false
-		}
-		return cycles >= countActionable(e.Players)
-	}
-	return false
 }
 
 func (e *GameEngine) updateStats(player *Player, action string) {
