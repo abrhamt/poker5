@@ -94,8 +94,19 @@ func (e *GameEngine) LoadFromGame(g *Game, players []*Player) {
 	e.Players = players
 }
 
-func (e *GameEngine) addNotification(msg string) {
-	e.Game.Notifications = append(e.Game.Notifications, msg)
+func (e *GameEngine) addNotification(kind, msg string) {
+	// Sequence numbers continue from whatever survived in the window, so they
+	// stay monotonic across a reload without needing a column of their own.
+	next := 1
+	if n := len(e.Game.Notifications); n > 0 {
+		next = e.Game.Notifications[n-1].Seq + 1
+	}
+
+	e.Game.Notifications = append(e.Game.Notifications, Notification{
+		Seq:  next,
+		Kind: kind,
+		Text: msg,
+	})
 	if len(e.Game.Notifications) > MaxNotifications {
 		e.Game.Notifications = e.Game.Notifications[len(e.Game.Notifications)-MaxNotifications:]
 	}
@@ -112,7 +123,7 @@ func (e *GameEngine) InitGame(playerNames []string) {
 	e.Game.GameStarted = false
 	e.Game.GameFinished = false
 	e.Game.TotalHands = 0
-	e.Game.Notifications = []string{}
+	e.Game.Notifications = []Notification{}
 	e.Game.PhaseIndex = 0
 	e.Game.Phase = Phases[0]
 	e.Game.Pot = 0

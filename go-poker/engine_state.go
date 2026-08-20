@@ -73,6 +73,7 @@ func (e *GameEngine) ToDict() map[string]interface{} {
 			"small_blind":     p.IsSmallBlind,
 			"big_blind":       p.IsBigBlind,
 			"cards":           cards,
+			"sitting_out":     p.SittingOut,
 			"seat_index":      p.SeatIndex,
 			"stats":           p.Stats,
 			"win_probability": p.WinProbability,

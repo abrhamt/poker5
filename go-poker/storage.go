@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,9 @@ func NewSQLiteStorage(dsn string) (*SQLiteStorage, error) {
 func NewSQLiteStorageFromDB(db *sql.DB) (*SQLiteStorage, error) {
 	if _, err := db.Exec(Schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
+	}
+	if err := applyMigrations(db); err != nil {
+		return nil, err
 	}
 	return &SQLiteStorage{db: db, owned: false}, nil
 }
@@ -97,6 +101,7 @@ CREATE TABLE IF NOT EXISTS poker_player (
     card1 TEXT,
     card2 TEXT,
     win_probability REAL,
+    sitting_out INTEGER NOT NULL DEFAULT 0,
     stats_data TEXT NOT NULL DEFAULT '{}',
     UNIQUE(game_id, seat_index),
     FOREIGN KEY(game_id) REFERENCES poker_game(id) ON DELETE CASCADE
@@ -270,7 +275,7 @@ func (s *SQLiteStorage) loadByTableID(tableID string) (*Game, error) {
 	_ = json.Unmarshal([]byte(deckJSON), &g.Deck)
 	_ = json.Unmarshal([]byte(graveyardJSON), &g.CardGraveyard)
 	_ = json.Unmarshal([]byte(communityJSON), &g.CommunityCards)
-	_ = json.Unmarshal([]byte(notifJSON), &g.Notifications)
+	g.Notifications = decodeNotifications(notifJSON)
 	if winnerJSON != "" && winnerJSON != "{}" {
 		_ = json.Unmarshal([]byte(winnerJSON), &g.LastWinner)
 	}
@@ -287,7 +292,7 @@ func (s *SQLiteStorage) loadByTableID(tableID string) (*Game, error) {
 		g.CommunityCards = []string{}
 	}
 	if g.Notifications == nil {
-		g.Notifications = []string{}
+		g.Notifications = []Notification{}
 	}
 	for i, p := range Phases {
 		if p == g.Phase {
@@ -314,6 +319,16 @@ func emptyAwards(a []PotAward) []PotAward {
 }
 
 func (s *SQLiteStorage) upsertPlayers(gameID int64, players []*Player) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM poker_player WHERE game_id = ?`, gameID); err != nil {
+		return err
+	}
+
 	for _, p := range players {
 		statsJSON, _ := json.Marshal(p.Stats)
 		card1 := sql.NullString{String: p.Cards[0], Valid: p.Cards[0] != "" && p.Cards[0] != "1B"}
@@ -322,42 +337,26 @@ func (s *SQLiteStorage) upsertPlayers(gameID int64, players []*Player) error {
 		if p.WinProbability != nil {
 			winProb = sql.NullFloat64{Float64: *p.WinProbability, Valid: true}
 		}
-		_, err := s.db.Exec(`
+		_, err := tx.Exec(`
             INSERT INTO poker_player
             (game_id, user_id, name, seat_index, is_bot, chips, round_bet, total_bet,
              folded, all_in, is_dealer, is_small_blind, is_big_blind,
-             card1, card2, win_probability, stats_data)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(game_id, seat_index) DO UPDATE SET
-                user_id=excluded.user_id,
-                name=excluded.name,
-                is_bot=excluded.is_bot,
-                chips=excluded.chips,
-                round_bet=excluded.round_bet,
-                total_bet=excluded.total_bet,
-                folded=excluded.folded,
-                all_in=excluded.all_in,
-                is_dealer=excluded.is_dealer,
-                is_small_blind=excluded.is_small_blind,
-                is_big_blind=excluded.is_big_blind,
-                card1=excluded.card1,
-                card2=excluded.card2,
-                win_probability=excluded.win_probability,
-                stats_data=excluded.stats_data`,
+             card1, card2, win_probability, sitting_out, stats_data)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			gameID, p.ID, p.Name, p.SeatIndex, boolInt(p.IsBot), p.Chips, p.RoundBet, p.TotalBet,
 			boolInt(p.Folded), boolInt(p.AllIn), boolInt(p.IsDealer), boolInt(p.IsSmallBlind),
-			boolInt(p.IsBigBlind), card1, card2, winProb, string(statsJSON))
+			boolInt(p.IsBigBlind), card1, card2, winProb, boolInt(p.SittingOut), string(statsJSON))
 		if err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *SQLiteStorage) loadPlayers(gameID int64) ([]*Player, error) {
 	rows, err := s.db.Query(`SELECT user_id, name, seat_index, is_bot, chips, round_bet,
         total_bet, folded, all_in, is_dealer, is_small_blind, is_big_blind,
-        card1, card2, win_probability, stats_data
+        card1, card2, win_probability, sitting_out, stats_data
         FROM poker_player WHERE game_id = ? ORDER BY seat_index`, gameID)
 	if err != nil {
 		return nil, err
@@ -366,13 +365,13 @@ func (s *SQLiteStorage) loadPlayers(gameID int64) ([]*Player, error) {
 	players := []*Player{}
 	for rows.Next() {
 		p := &Player{}
-		var isBot, folded, allIn, dealer, sb, bb int
+		var isBot, folded, allIn, dealer, sb, bb, sittingOut int
 		var card1, card2 sql.NullString
 		var winProb sql.NullFloat64
 		var statsJSON string
 		if err := rows.Scan(&p.ID, &p.Name, &p.SeatIndex, &isBot, &p.Chips, &p.RoundBet,
 			&p.TotalBet, &folded, &allIn, &dealer, &sb, &bb,
-			&card1, &card2, &winProb, &statsJSON); err != nil {
+			&card1, &card2, &winProb, &sittingOut, &statsJSON); err != nil {
 			return nil, err
 		}
 		p.IsBot = isBot != 0
@@ -381,6 +380,7 @@ func (s *SQLiteStorage) loadPlayers(gameID int64) ([]*Player, error) {
 		p.IsDealer = dealer != 0
 		p.IsSmallBlind = sb != 0
 		p.IsBigBlind = bb != 0
+		p.SittingOut = sittingOut != 0
 		if card1.Valid {
 			p.Cards[0] = card1.String
 		} else {
@@ -443,4 +443,58 @@ func (s *SQLiteStorage) SetConfig(key, value string) error {
 type ConfigStore interface {
 	GetConfig(key string) (string, bool, error)
 	SetConfig(key, value string) error
+}
+
+// migrations are applied after the schema is created. The schema itself is all
+// CREATE TABLE IF NOT EXISTS, so a database that already exists never picks up
+// a new column — every column added after the first release has to land here
+// too, or production starts failing writes with "no such column".
+//
+// Each entry must be safe to run repeatedly: SQLite has no ADD COLUMN IF NOT
+// EXISTS, so a duplicate column is expected and ignored.
+var migrations = []string{
+	`ALTER TABLE poker_player ADD COLUMN sitting_out INTEGER NOT NULL DEFAULT 0`,
+}
+
+func applyMigrations(db *sql.DB) error {
+	for _, statement := range migrations {
+		if _, err := db.Exec(statement); err != nil {
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
+			return fmt.Errorf("migration %q: %w", statement, err)
+		}
+	}
+	return nil
+}
+
+// decodeNotifications reads the notifications column, which holds either the
+// current array of objects or — for any game saved before notifications gained
+// a kind and a sequence — a plain array of strings. Old rows are upgraded in
+// place on read so no database migration is needed.
+func decodeNotifications(raw string) []Notification {
+	if raw == "" {
+		return []Notification{}
+	}
+
+	var structured []Notification
+	if err := json.Unmarshal([]byte(raw), &structured); err == nil {
+		// A literal "null" unmarshals cleanly into a nil slice; callers should
+		// never have to nil-check what this returns.
+		if structured == nil {
+			return []Notification{}
+		}
+		return structured
+	}
+
+	var legacy []string
+	if err := json.Unmarshal([]byte(raw), &legacy); err != nil {
+		return []Notification{}
+	}
+
+	out := make([]Notification, 0, len(legacy))
+	for i, text := range legacy {
+		out = append(out, Notification{Seq: i + 1, Kind: NoteSystem, Text: text})
+	}
+	return out
 }

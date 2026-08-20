@@ -72,7 +72,7 @@ func runDemo() {
 		steps++
 		if eng.Game.Notifications != nil && len(eng.Game.Notifications) > 0 {
 			last := eng.Game.Notifications[len(eng.Game.Notifications)-1]
-			fmt.Printf("  step %d: %s\n", steps, last)
+			fmt.Printf("  step %d: %s\n", steps, last.Text)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

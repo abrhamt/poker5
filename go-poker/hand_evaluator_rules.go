@@ -2,7 +2,6 @@ package poker
 
 import (
 	"sort"
-	"strings"
 )
 
 func solveStraightFlush(h *Hand) {
@@ -40,6 +39,9 @@ func solveStraightFlush(h *Hand) {
 		solveStraight(st2)
 		if st2.IsPossible {
 			h.Cards = append([]Card{}, st2.Cards...)
+			if len(h.Cards) > h.Rules.CardsInHand {
+				h.Cards = h.Cards[:h.Rules.CardsInHand]
+			}
 			h.SFLength = st2.SFLength
 		}
 	}
@@ -47,12 +49,7 @@ func solveStraightFlush(h *Hand) {
 		h.Descr = HandRoyalFlush
 		h.Name = HandRoyalFlush
 	} else if len(h.Cards) >= h.Rules.SFQualify {
-		suit := byte('?')
-		if len(h.Cards) > 0 {
-			suit = h.Cards[0].Suit
-		}
-		descr := strings.TrimSuffix(h.Cards[0].String(), string(suit)) + string(suit) + " High"
-		h.Descr = descr
+		h.Descr = "Straight Flush (" + rankName(h.Cards[0].Value) + " High)"
 		h.Name = HandStraightFlush
 	}
 	h.IsPossible = len(h.Cards) >= h.Rules.SFQualify
@@ -86,11 +83,7 @@ func solveFourOfAKind(h *Hand) {
 		}
 	}
 	if len(h.Cards) >= 4 {
-		suit := byte('?')
-		if len(h.Cards) > 0 {
-			suit = h.Cards[0].Suit
-		}
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(suit)) + "'s"
+		h.Descr = "Four of a Kind (" + rankPlural(h.Cards[0].Value) + ")"
 		if h.Rules.NoKickers {
 			h.Cards = h.Cards[:4]
 		}
@@ -149,16 +142,7 @@ func solveFullHouse(h *Hand) {
 		}
 	}
 	if len(h.Cards) >= 5 {
-		top := byte('?')
-		bot := byte('?')
-		if len(h.Cards) > 0 {
-			top = h.Cards[0].Suit
-		}
-		if len(h.Cards) > 3 {
-			bot = h.Cards[3].Suit
-		}
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(top)) + "'s over " +
-			strings.TrimSuffix(h.Cards[3].String(), string(bot)) + "'s"
+		h.Descr = "Full House (" + rankPlural(h.Cards[0].Value) + " over " + rankPlural(h.Cards[3].Value) + ")"
 	}
 	h.IsPossible = len(h.Cards) >= 5
 }
@@ -174,11 +158,7 @@ func solveFlush(h *Hand) {
 		}
 	}
 	if len(h.Cards) >= h.Rules.SFQualify {
-		suit := byte('?')
-		if len(h.Cards) > 0 {
-			suit = h.Cards[0].Suit
-		}
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(suit)) + string(suit) + " High"
+		h.Descr = "Flush (" + rankName(h.Cards[0].Value) + " High)"
 		h.SFLength = len(h.Cards)
 		if len(h.Cards) < h.Rules.CardsInHand {
 			more := h.nextHighest()
@@ -187,6 +167,9 @@ func solveFlush(h *Hand) {
 				need = len(more)
 			}
 			h.Cards = append(h.Cards, more[:need]...)
+		}
+		if len(h.Cards) > h.Rules.CardsInHand {
+			h.Cards = h.Cards[:h.Rules.CardsInHand]
 		}
 	}
 	h.IsPossible = len(h.Cards) >= h.Rules.SFQualify
@@ -252,8 +235,10 @@ func solveStraight(h *Hand) {
 
 	if len(best) >= 5 {
 		h.Cards = best
-		suit := h.Cards[0].Suit
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(suit)) + " High Straight"
+		if len(h.Cards) > h.Rules.CardsInHand {
+			h.Cards = h.Cards[:h.Rules.CardsInHand]
+		}
+		h.Descr = "Straight (" + rankName(h.Cards[0].Value) + " High)"
 		h.IsPossible = true
 	} else {
 		h.IsPossible = false

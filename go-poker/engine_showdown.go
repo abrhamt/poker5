@@ -116,12 +116,18 @@ func (e *GameEngine) doShowdown() {
 		winner := active[0]
 		winner.Stats.HandsWon++
 		winner.Chips += e.Game.Pot
-		e.addNotification(fmt.Sprintf("%s wins %d!", winner.Name, e.Game.Pot))
+		e.addNotification(NoteResult, fmt.Sprintf("%s wins %d!", winner.Name, e.Game.Pot))
+		handName := "Opponents Folded"
+		if len(e.Game.CommunityCards) >= 3 {
+			if h := e.SolveHandFor(winner); h != "" {
+				handName = h
+			}
+		}
 		e.Game.LastWinner = &Winner{
 			Name:         winner.Name,
 			SeatIndex:    winner.SeatIndex,
 			Amount:       e.Game.Pot,
-			HandName:     e.SolveHandFor(winner),
+			HandName:     handName,
 			WinningCards: cardCodesFor(winner, e.Game.CommunityCards),
 			HoleCards:    []string{winner.Cards[0], winner.Cards[1]},
 			BoardCards:   append([]string{}, e.Game.CommunityCards...),
@@ -173,12 +179,18 @@ func (e *GameEngine) resolveSidePots(pots []sidePot, active []*Player, hadShowdo
 				}
 				winnersSet[sole] = true
 			}
-			e.addNotification(fmt.Sprintf("%s wins %d.", sole.Name, sp.amount))
+			e.addNotification(NoteResult, fmt.Sprintf("%s wins %d.", sole.Name, sp.amount))
+			soleHandName := "Opponents Folded"
+			if len(e.Game.CommunityCards) >= 3 {
+				if h := e.SolveHandFor(sole); h != "" {
+					soleHandName = h
+				}
+			}
 			awards = append(awards, PotAward{
 				PotIndex: potIdx,
 				Amount:   sp.amount,
 				Winner:   sole.Name,
-				HandName: e.SolveHandFor(sole),
+				HandName: soleHandName,
 				Cards:    cardCodesFor(sole, e.Game.CommunityCards),
 			})
 			if headlineWinner == nil || sp.amount > headlineWinner.Amount {
@@ -186,7 +198,7 @@ func (e *GameEngine) resolveSidePots(pots []sidePot, active []*Player, hadShowdo
 					Name:         sole.Name,
 					SeatIndex:    sole.SeatIndex,
 					Amount:       sp.amount,
-					HandName:     "Uncontested",
+					HandName:     soleHandName,
 					WinningCards: cardCodesFor(sole, e.Game.CommunityCards),
 					HoleCards:    []string{sole.Cards[0], sole.Cards[1]},
 					BoardCards:   append([]string{}, e.Game.CommunityCards...),
