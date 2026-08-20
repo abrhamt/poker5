@@ -1,0 +1,58 @@
+# Golden Poker — Caddy front end.
+#
+# Caddy serves the built frontend from disk. The Go binary is a pure JSON + SSE
+# API on 127.0.0.1:9011 and serves no files at all, so /api is the only thing
+# that gets proxied — plus /admin while that dashboard is still server-rendered
+# HTML, which goes away once it is a Vite bundle too.
+#
+# Replace goldenpoker.example.com with your domain; Caddy gets the certificate
+# itself.
+#
+# Everything is inside handle blocks on purpose. Caddy runs directives in its
+# own fixed order rather than the order they are written, and try_files runs
+# *before* reverse_proxy: written flat, try_files rewrites POST /api/... to
+# /index.html before the proxy ever matches it, and file_server answers 405
+# because it only serves GET and HEAD. handle blocks are mutually exclusive and
+# evaluated top to bottom, so API traffic never reaches try_files.
+
+goldenpoker.example.com {
+	handle /api/* {
+		# flush_interval -1 writes through immediately instead of buffering,
+		# which is what keeps the /api/events SSE stream live rather than
+		# arriving in lurches.
+		reverse_proxy 127.0.0.1:9011 {
+			flush_interval -1
+		}
+	}
+
+	# The last server-rendered page. Delete this block when the admin UI
+	# becomes its own bundle.
+	handle /admin* {
+		reverse_proxy 127.0.0.1:9011
+	}
+
+	handle {
+		root * /var/www/html/goldenpoker/dist
+
+		# Hashed filenames change whenever their contents do, so they can be
+		# cached forever. The card deck is not hashed but effectively never
+		# changes, so it gets a week rather than a year. Everything else must
+		# not be cached at all: a stale index.html would point browsers at
+		# asset names that no longer exist. The matchers are mutually
+		# exclusive so none can override another.
+		@immutable path /assets/*
+		@stable path /cards/* /legacy/*
+		@volatile not path /assets/* /cards/* /legacy/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		header @stable Cache-Control "public, max-age=604800"
+		header @volatile Cache-Control "no-store"
+
+		encode zstd gzip
+
+		# Unknown paths fall back to the app so a reload on /lobby or
+		# /table/12345 still works. {path} rather than {uri}: {uri} carries
+		# the query string, which would be looked up as part of the filename.
+		try_files {path} /index.html
+		file_server
+	}
+}

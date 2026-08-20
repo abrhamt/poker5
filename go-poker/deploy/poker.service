@@ -1,0 +1,36 @@
+# systemd unit for the Go server. Install to /etc/systemd/system/poker.service
+[Unit]
+Description=Golden Poker API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=poker
+Group=poker
+WorkingDirectory=/srv/poker
+
+# Bound to loopback on purpose: Caddy is the only thing that should be able to
+# reach the app. Publishing 9011 on a public interface would expose the API
+# over plain HTTP, bypassing TLS entirely.
+#
+# This process serves no files — the frontend bundle lives in
+# /var/www/html/goldenpoker and is served by Caddy — so its working directory
+# only needs the binary, the .env, and the database.
+ExecStart=/srv/poker/poker-server -mode=server -addr=127.0.0.1:9011 -db=/srv/poker/poker.db
+
+Restart=always
+RestartSec=3
+
+# The app reads /srv/poker/.env itself, but real environment variables take
+# precedence over that file, so anything set here wins.
+Environment=SESSION_COOKIE_SECURE=true
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/poker
+
+[Install]
+WantedBy=multi-user.target
