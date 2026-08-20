@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/gofiber/fiber/v3"
 	poker "github.com/zuse/poker5/go-poker"
@@ -58,12 +57,17 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 
 	bootstrap(context.Background(), authSvc, walletSvc)
 
-	authHandler := NewAuthHandler(authSvc)
+	secureCookies := secureCookiesEnabled()
+	if !secureCookies {
+		log.Printf("warning: session cookies are being sent WITHOUT the Secure flag — " +
+			"set SESSION_COOKIE_SECURE=true once the site is served over HTTPS")
+	}
+
+	authHandler := NewAuthHandler(authSvc, secureCookies)
 	walletHandler := NewWalletHandler(walletSvc, authSvc)
 	sseHandler := NewSSEHandler(sseHub)
-	roomHandler := NewRoomHandler(roomSvc, authSvc)
+	roomHandler := NewRoomHandler(roomSvc, authSvc, gameSvc)
 	gameHandler := NewGameHandler(gameSvc, authSvc, roomSvc)
-	viewHandler := NewViewHandler(authSvc, walletSvc, roomSvc, gameSvc)
 	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc)
 
 	s := &FiberServer{
@@ -81,14 +85,8 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 		return c.JSON(fiber.Map{"status": "ok", "service": "go-poker"})
 	})
 
-	app.Get("/", viewHandler.RenderHome)
-	app.Get("/login", viewHandler.RenderLogin)
-	app.Get("/register", viewHandler.RenderRegister)
-	app.Get("/lobby", viewHandler.RenderLobby)
-	app.Get("/lobby/rooms", viewHandler.RenderLobbyRooms)
-	app.Get("/wallet", viewHandler.RenderWallet)
-	app.Get("/table/:id", viewHandler.RenderTable)
-
+	// Every player-facing page is rendered by the React app in frontend/;
+	// only the admin dashboard is still server-rendered HTML.
 	admin := app.Group("/admin", adminHandler.RequireAdmin)
 	admin.Get("/", adminHandler.RenderDashboard)
 
@@ -111,6 +109,7 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 	table.Post("/:id/leave", gameHandler.Leave)
 	table.Post("/:id/act", gameHandler.Act)
 	table.Post("/:id/start", gameHandler.Start)
+	table.Post("/:id/sit-in", gameHandler.SitIn)
 	table.Get("/:id/state", gameHandler.GetState)
 
 	wallet := api.Group("/wallet")
@@ -124,9 +123,11 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 
 	api.Get("/events", sseHandler.HandleEvents)
 
-	staticDir, _ := filepath.Abs("static")
-	app.Get("/static/*", func(c fiber.Ctx) error {
-		return c.SendFile(filepath.Join(staticDir, c.Params("*")))
+	// Anything unrouted is a client mistake, not a page: this server is a JSON
+	// API and serves no files. The React app (and, later, the admin app) are
+	// static bundles served by the web server in front of it.
+	app.Use(func(c fiber.Ctx) error {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not found"})
 	})
 
 	return s

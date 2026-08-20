@@ -9,10 +9,12 @@ import (
 
 type AuthHandler struct {
 	auth *services.AuthService
+	// secureCookies mirrors SESSION_COOKIE_SECURE; see session_cookie.go.
+	secureCookies bool
 }
 
-func NewAuthHandler(auth *services.AuthService) *AuthHandler {
-	return &AuthHandler{auth: auth}
+func NewAuthHandler(auth *services.AuthService, secureCookies bool) *AuthHandler {
+	return &AuthHandler{auth: auth, secureCookies: secureCookies}
 }
 
 func (h *AuthHandler) Register(c fiber.Ctx) error {
@@ -36,9 +38,6 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 
 	user, err := h.auth.Register(c.Context(), req)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="error-badge">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -47,18 +46,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		Password: req.Password,
 	})
 	if err == nil {
-		c.Cookie(&fiber.Cookie{
-			Name:     "poker_session",
-			Value:    token,
-			Expires:  time.Now().Add(24 * 7 * time.Hour),
-			HTTPOnly: true,
-			SameSite: "Lax",
-		})
-	}
-
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/lobby")
-		return c.SendStatus(fiber.StatusCreated)
+		c.Cookie(sessionCookie(token, time.Now().Add(sessionCookieTTL), h.secureCookies))
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
@@ -88,24 +76,10 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 
 	user, token, err := h.auth.Login(c.Context(), req)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="error-badge">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	c.Cookie(&fiber.Cookie{
-		Name:     "poker_session",
-		Value:    token,
-		Expires:  time.Now().Add(24 * 7 * time.Hour),
-		HTTPOnly: true,
-		SameSite: "Lax",
-	})
-
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", homeRouteFor(user))
-		return c.SendStatus(fiber.StatusOK)
-	}
+	c.Cookie(sessionCookie(token, time.Now().Add(sessionCookieTTL), h.secureCookies))
 
 	return c.JSON(fiber.Map{
 		"message": "login successful",
@@ -138,6 +112,7 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 			"phone_number":  user.PhoneNumber,
 			"wallet":        user.Wallet,
 			"referral_code": user.ReferralCode,
+			"role":          user.Role,
 			"created_at":    user.CreatedAt,
 		},
 	})
@@ -149,17 +124,7 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 		_ = h.auth.Logout(c.Context(), token)
 	}
 
-	c.Cookie(&fiber.Cookie{
-		Name:     "poker_session",
-		Value:    "",
-		Expires:  time.Now().Add(-1 * time.Hour),
-		HTTPOnly: true,
-	})
-
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/login")
-		return c.SendStatus(fiber.StatusOK)
-	}
+	c.Cookie(sessionCookie("", time.Now().Add(-1*time.Hour), h.secureCookies))
 
 	return c.JSON(fiber.Map{"message": "logged out successfully"})
 }

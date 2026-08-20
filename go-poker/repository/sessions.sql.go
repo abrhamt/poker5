@@ -65,6 +65,20 @@ func (q *Queries) DeleteSessionToken(ctx context.Context, sessionToken string) e
 	return err
 }
 
+const extendSessionToken = `-- name: ExtendSessionToken :exec
+UPDATE user_sessions SET expires_at = ? WHERE session_token = ?
+`
+
+type ExtendSessionTokenParams struct {
+	ExpiresAt    time.Time
+	SessionToken string
+}
+
+func (q *Queries) ExtendSessionToken(ctx context.Context, arg ExtendSessionTokenParams) error {
+	_, err := q.db.ExecContext(ctx, extendSessionToken, arg.ExpiresAt, arg.SessionToken)
+	return err
+}
+
 const getGameSessionsByTable = `-- name: GetGameSessionsByTable :many
 SELECT id, table_id, hand_number, pot_amount, commission_amount, winner_user_id, winner_name, hand_name, details_json, created_at
 FROM game_sessions
@@ -106,16 +120,35 @@ func (q *Queries) GetGameSessionsByTable(ctx context.Context, tableID string) ([
 	return items, nil
 }
 
-const getUserBySessionToken = `-- name: GetUserBySessionToken :one
-SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at
+const getSessionWithUser = `-- name: GetSessionWithUser :one
+SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at,
+       s.expires_at AS session_expires_at,
+       s.created_at AS session_created_at
 FROM user_sessions s
 JOIN users u ON s.user_id = u.id
 WHERE s.session_token = ? AND s.expires_at > CURRENT_TIMESTAMP LIMIT 1
 `
 
-func (q *Queries) GetUserBySessionToken(ctx context.Context, sessionToken string) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserBySessionToken, sessionToken)
-	var i User
+type GetSessionWithUserRow struct {
+	ID               int64
+	Username         string
+	PhoneNumber      string
+	PasswordHash     string
+	Wallet           int64
+	ReferralCode     string
+	ReferredBy       sql.NullString
+	Role             string
+	CreatedAt        time.Time
+	SessionExpiresAt time.Time
+	SessionCreatedAt time.Time
+}
+
+// Returns the signed-in user together with the session's own timestamps, so a
+// single round trip can both authenticate the request and decide whether the
+// session is due to be slid forward (see AuthService.GetUserByToken).
+func (q *Queries) GetSessionWithUser(ctx context.Context, sessionToken string) (GetSessionWithUserRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionWithUser, sessionToken)
+	var i GetSessionWithUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -126,6 +159,8 @@ func (q *Queries) GetUserBySessionToken(ctx context.Context, sessionToken string
 		&i.ReferredBy,
 		&i.Role,
 		&i.CreatedAt,
+		&i.SessionExpiresAt,
+		&i.SessionCreatedAt,
 	)
 	return i, err
 }

@@ -20,8 +20,8 @@ var (
 
 // BlindTier is one of the fixed public-room blind levels.
 type BlindTier struct {
-	SmallBlind int32
-	BigBlind   int32
+	SmallBlind int32 `json:"small_blind"`
+	BigBlind   int32 `json:"big_blind"`
 }
 
 var PublicBlindTiers = []BlindTier{

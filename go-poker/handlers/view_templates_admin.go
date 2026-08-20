@@ -134,7 +134,7 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
 		renderAdminTransactionsTableHTML(txs),
 	)
 
-	return renderBaseLayout("Admin", content, "admin", "admin", 0, true)
+	return renderBaseLayout("Admin", content, "admin")
 }
 
 func renderAdminUsersTableHTML(users []repository.User) string {

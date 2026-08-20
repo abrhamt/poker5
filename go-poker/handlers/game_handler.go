@@ -26,39 +26,23 @@ func (h *GameHandler) Join(c fiber.Ctx) error {
 
 	user, err := h.auth.GetUserByToken(c.Context(), token)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			c.Set("HX-Redirect", "/login")
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
 	if user.Role == "admin" {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">Admin accounts can't play — head to the dashboard instead.</div>`)
-		}
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin accounts cannot play"})
 	}
 
 	room, err := h.rooms.GetRoomByCode(c.Context(), roomCode)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">Room not found.</div>`)
-		}
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "room not found"})
 	}
 
 	err = h.game.JoinTable(c.Context(), room, user)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	if c.Get("HX-Request") == "true" {
-		return c.SendString(`<div class="toast success">Joined table successfully!</div>`)
-	}
 	return c.JSON(fiber.Map{"status": "ok", "message": "joined table"})
 }
 
@@ -79,10 +63,6 @@ func (h *GameHandler) Leave(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/lobby")
-		return c.SendStatus(fiber.StatusOK)
-	}
 	return c.JSON(fiber.Map{"status": "ok", "message": "left table"})
 }
 
@@ -95,10 +75,6 @@ func (h *GameHandler) Act(c fiber.Ctx) error {
 
 	user, err := h.auth.GetUserByToken(c.Context(), token)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			c.Set("HX-Redirect", "/login")
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
@@ -121,9 +97,6 @@ func (h *GameHandler) Act(c fiber.Ctx) error {
 
 	err = h.game.SubmitAction(c.Context(), roomCode, user, req.Action, req.Amount)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="action-feedback error">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -144,13 +117,31 @@ func (h *GameHandler) Start(c fiber.Ctx) error {
 
 	err = h.game.StartHandManually(c.Context(), roomCode, user.ID)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.SendStatus(fiber.StatusOK)
+}
+
+// SitIn returns a player who was sat out by the turn clock to the next hand.
+// Nothing acts on their behalf again until they ask for it here.
+func (h *GameHandler) SitIn(c fiber.Ctx) error {
+	roomCode := c.Params("id")
+	token := c.Cookies("poker_session")
+	if token == "" {
+		token = c.Get("Authorization")
+	}
+
+	user, err := h.auth.GetUserByToken(c.Context(), token)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	if err := h.game.SitIn(c.Context(), roomCode, user.ID); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"status": "ok"})
 }
 
 func (h *GameHandler) GetState(c fiber.Ctx) error {

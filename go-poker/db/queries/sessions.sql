@@ -2,11 +2,19 @@
 INSERT INTO user_sessions (session_token, user_id, expires_at)
 VALUES (?, ?, ?);
 
--- name: GetUserBySessionToken :one
-SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at
+-- name: GetSessionWithUser :one
+-- Returns the signed-in user together with the session's own timestamps, so a
+-- single round trip can both authenticate the request and decide whether the
+-- session is due to be slid forward (see AuthService.GetUserByToken).
+SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at,
+       s.expires_at AS session_expires_at,
+       s.created_at AS session_created_at
 FROM user_sessions s
 JOIN users u ON s.user_id = u.id
 WHERE s.session_token = ? AND s.expires_at > CURRENT_TIMESTAMP LIMIT 1;
+
+-- name: ExtendSessionToken :exec
+UPDATE user_sessions SET expires_at = ? WHERE session_token = ?;
 
 
 -- name: DeleteSessionToken :exec

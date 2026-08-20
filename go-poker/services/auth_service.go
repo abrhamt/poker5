@@ -10,6 +10,26 @@ import (
 	"github.com/zuse/poker5/go-poker/utilities"
 )
 
+// Session lifetime. Expiry slides: a session that keeps being used keeps being
+// renewed, so a player who logs in every few days is never signed out — which
+// matters here because being signed out mid-hand leaves their chips on the
+// felt, auto-folding on the turn timer until they get back in.
+const (
+	// SessionIdleTTL is how long a session survives without being used.
+	SessionIdleTTL = 7 * 24 * time.Hour
+
+	// SessionAbsoluteTTL caps how long one session can be kept alive by
+	// sliding, no matter how active the player is. Past this it expires and
+	// they sign in again.
+	SessionAbsoluteTTL = 90 * 24 * time.Hour
+
+	// sessionRenewWindow is how little life must remain before a session is
+	// slid forward. Set just under SessionIdleTTL so an active player costs
+	// roughly one UPDATE per day rather than one per request — the table view
+	// re-reads state on every broadcast, so per-request writes would be a lot.
+	sessionRenewWindow = 6 * 24 * time.Hour
+)
+
 var (
 	ErrUserExists      = errors.New("username or phone number already registered")
 	ErrInvalidCreds    = errors.New("invalid username/phone or password")
@@ -124,7 +144,7 @@ func (s *AuthService) Login(ctx context.Context, req LoginRequest) (*repository.
 	}
 
 	token := utilities.GenerateSessionToken()
-	expiresAt := time.Now().Add(24 * 7 * time.Hour)
+	expiresAt := time.Now().Add(SessionIdleTTL)
 
 	err = s.q.CreateSessionToken(ctx, repository.CreateSessionTokenParams{
 		SessionToken: token,
@@ -194,11 +214,54 @@ func (s *AuthService) GetUserByToken(ctx context.Context, token string) (*reposi
 	if token == "" {
 		return nil, ErrUnauthorized
 	}
-	user, err := s.q.GetUserBySessionToken(ctx, token)
+	row, err := s.q.GetSessionWithUser(ctx, token)
 	if err != nil {
 		return nil, ErrUnauthorized
 	}
-	return &user, nil
+
+	s.slideSession(ctx, token, row.SessionCreatedAt, row.SessionExpiresAt)
+
+	return &repository.User{
+		ID:           row.ID,
+		Username:     row.Username,
+		PhoneNumber:  row.PhoneNumber,
+		PasswordHash: row.PasswordHash,
+		Wallet:       row.Wallet,
+		ReferralCode: row.ReferralCode,
+		ReferredBy:   row.ReferredBy,
+		Role:         row.Role,
+		CreatedAt:    row.CreatedAt,
+	}, nil
+}
+
+// slideSession pushes a session's expiry back out to a full idle window, but
+// only once it is close enough to expiring to be worth a write, and never past
+// the absolute ceiling measured from when the session was first issued.
+//
+// Failures are deliberately swallowed: the caller has already authenticated
+// successfully, and refusing the request because a bookkeeping write failed
+// would be a worse outcome than a session that expires on its original
+// schedule.
+func (s *AuthService) slideSession(ctx context.Context, token string, createdAt, expiresAt time.Time) {
+	now := time.Now()
+	if expiresAt.Sub(now) > sessionRenewWindow {
+		return
+	}
+
+	ceiling := createdAt.Add(SessionAbsoluteTTL)
+	if !now.Before(ceiling) {
+		return
+	}
+
+	renewed := now.Add(SessionIdleTTL)
+	if renewed.After(ceiling) {
+		renewed = ceiling
+	}
+
+	_ = s.q.ExtendSessionToken(ctx, repository.ExtendSessionTokenParams{
+		ExpiresAt:    renewed,
+		SessionToken: token,
+	})
 }
 
 func (s *AuthService) Logout(ctx context.Context, token string) error {
