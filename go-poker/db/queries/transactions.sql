@@ -2,11 +2,17 @@
 INSERT INTO transactions (user_id, amount, type, reason, transaction_id)
 VALUES (?, ?, ?, ?, ?);
 
--- name: GetTransactionsByUserID :many
+-- name: ListTransactionsByUserID :many
 SELECT id, user_id, amount, type, reason, transaction_id, created_at
 FROM transactions
 WHERE user_id = ?
-ORDER BY id DESC LIMIT 50;
+ORDER BY id DESC
+LIMIT ? OFFSET ?;
+
+-- name: CountTransactionsByUserID :one
+SELECT COUNT(*) AS total
+FROM transactions
+WHERE user_id = ?;
 
 -- name: FilterTransactions :many
 SELECT t.id, t.user_id, t.amount, t.type, t.reason, t.transaction_id, t.created_at, u.username

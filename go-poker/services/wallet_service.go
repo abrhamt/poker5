@@ -246,6 +246,63 @@ func (s *WalletService) ProcessHandPayout(ctx context.Context, winnerUserID int6
 	return result, nil
 }
 
-func (s *WalletService) GetUserTransactions(ctx context.Context, userID int64) ([]repository.Transaction, error) {
-	return s.q.GetTransactionsByUserID(ctx, userID)
+// TransactionPage is one page of a player's ledger together with everything the
+// client needs to draw pagination controls, so listing never costs two calls.
+type TransactionPage struct {
+	Transactions []repository.Transaction
+	Page         int
+	PageSize     int
+	Total        int64
+	TotalPages   int
+}
+
+const (
+	DefaultTransactionsPageSize = 12
+	MaxTransactionsPageSize     = 50
+)
+
+// GetUserTransactions returns the requested page of a player's ledger, newest
+// first. Out-of-range requests are clamped rather than rejected: a page past
+// the end lands on the last real page, which keeps the UI honest if the ledger
+// changed between the client asking and the query running.
+func (s *WalletService) GetUserTransactions(ctx context.Context, userID int64, page, pageSize int) (TransactionPage, error) {
+	if pageSize <= 0 {
+		pageSize = DefaultTransactionsPageSize
+	}
+	if pageSize > MaxTransactionsPageSize {
+		pageSize = MaxTransactionsPageSize
+	}
+	if page < 1 {
+		page = 1
+	}
+
+	total, err := s.q.CountTransactionsByUserID(ctx, userID)
+	if err != nil {
+		return TransactionPage{}, err
+	}
+
+	totalPages := 1
+	if total > 0 {
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+
+	rows, err := s.q.ListTransactionsByUserID(ctx, repository.ListTransactionsByUserIDParams{
+		UserID: userID,
+		Limit:  int32(pageSize),
+		Offset: int32((page - 1) * pageSize),
+	})
+	if err != nil {
+		return TransactionPage{}, err
+	}
+
+	return TransactionPage{
+		Transactions: rows,
+		Page:         page,
+		PageSize:     pageSize,
+		Total:        total,
+		TotalPages:   totalPages,
+	}, nil
 }

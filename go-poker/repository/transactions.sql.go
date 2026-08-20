@@ -11,6 +11,19 @@ import (
 	"time"
 )
 
+const countTransactionsByUserID = `-- name: CountTransactionsByUserID :one
+SELECT COUNT(*) AS total
+FROM transactions
+WHERE user_id = ?
+`
+
+func (q *Queries) CountTransactionsByUserID(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTransactionsByUserID, userID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const createTransaction = `-- name: CreateTransaction :execresult
 INSERT INTO transactions (user_id, amount, type, reason, transaction_id)
 VALUES (?, ?, ?, ?, ?)
@@ -100,15 +113,22 @@ func (q *Queries) FilterTransactions(ctx context.Context, arg FilterTransactions
 	return items, nil
 }
 
-const getTransactionsByUserID = `-- name: GetTransactionsByUserID :many
+const listTransactionsByUserID = `-- name: ListTransactionsByUserID :many
 SELECT id, user_id, amount, type, reason, transaction_id, created_at
 FROM transactions
 WHERE user_id = ?
-ORDER BY id DESC LIMIT 50
+ORDER BY id DESC
+LIMIT ? OFFSET ?
 `
 
-func (q *Queries) GetTransactionsByUserID(ctx context.Context, userID int64) ([]Transaction, error) {
-	rows, err := q.db.QueryContext(ctx, getTransactionsByUserID, userID)
+type ListTransactionsByUserIDParams struct {
+	UserID int64
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListTransactionsByUserID(ctx context.Context, arg ListTransactionsByUserIDParams) ([]Transaction, error) {
+	rows, err := q.db.QueryContext(ctx, listTransactionsByUserID, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

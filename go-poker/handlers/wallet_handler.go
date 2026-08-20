@@ -24,10 +24,6 @@ func (h *WalletHandler) Deposit(c fiber.Ctx) error {
 
 	user, err := h.auth.GetUserByToken(c.Context(), token)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			c.Set("HX-Redirect", "/login")
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
@@ -45,23 +41,12 @@ func (h *WalletHandler) Deposit(c fiber.Ctx) error {
 	}
 
 	if body.Amount <= 0 {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">Please enter a valid deposit amount greater than $0.</div>`)
-		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid deposit amount"})
 	}
 
 	tx, err := h.wallet.Deposit(c.Context(), user.ID, body.Amount)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/wallet")
-		return c.SendStatus(fiber.StatusOK)
 	}
 
 	return c.JSON(fiber.Map{
@@ -83,13 +68,16 @@ func (h *WalletHandler) GetTransactions(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	txs, err := h.wallet.GetUserTransactions(c.Context(), user.ID)
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+
+	result, err := h.wallet.GetUserTransactions(c.Context(), user.ID, page, pageSize)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	out := make([]fiber.Map, 0, len(txs))
-	for _, t := range txs {
+	out := make([]fiber.Map, 0, len(result.Transactions))
+	for _, t := range result.Transactions {
 		out = append(out, fiber.Map{
 			"id":             t.ID,
 			"amount":         t.Amount,
@@ -101,7 +89,10 @@ func (h *WalletHandler) GetTransactions(c fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"user_id":      strconv.FormatInt(user.ID, 10),
 		"transactions": out,
+		"page":         result.Page,
+		"page_size":    result.PageSize,
+		"total":        result.Total,
+		"total_pages":  result.TotalPages,
 	})
 }
