@@ -17,7 +17,7 @@ WorkingDirectory=/srv/poker
 # This process serves no files — the frontend bundle lives in
 # /var/www/html/goldenpoker and is served by Caddy — so its working directory
 # only needs the binary, the .env, and the database.
-ExecStart=/srv/poker/poker-server -mode=server -addr=127.0.0.1:9011 -db=/srv/poker/poker.db
+ExecStart=/srv/poker/poker-server -mode=server -addr=127.0.0.1:9011
 
 Restart=always
 RestartSec=3

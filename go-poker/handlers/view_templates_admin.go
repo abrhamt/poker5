@@ -2,12 +2,19 @@ package handlers
 
 import (
 	"fmt"
+	"html"
+	"time"
 
 	"github.com/zuse/poker5/go-poker/repository"
 	"github.com/zuse/poker5/go-poker/services"
 )
 
-func renderAdminDashboardHTML(earnings services.EarningsSummary, settings repository.SiteSetting, users []repository.User, txs []adminTxRow) string {
+func renderAdminDashboardHTML(earnings services.EarningsSummary, settings repository.SiteSetting, users []repository.User, txs []adminTxRow, pendingDeposits []repository.ListBankDepositsForReviewRow) string {
+	realDepositsOn, realDepositsOff := "", " selected"
+	if settings.RealDepositsEnabled {
+		realDepositsOn, realDepositsOff = " selected", ""
+	}
+
 	percentSelected := ""
 	sbSelected := ""
 	if settings.RakeMode == services.RakeModeSmallBlind {
@@ -56,7 +63,8 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
         <div class="admin-grid">
             <section class="admin-card">
                 <h2>Site Settings</h2>
-                <form hx-post="/api/admin/settings" hx-target="#settings-error" class="settings-form"
+                <form action="/api/admin/settings" method="post"
+                      hx-post="/api/admin/settings" hx-target="#settings-error" class="settings-form"
                       hx-confirm="Save these site settings? Rake mode, percentages, and countdown apply to every table immediately.">
                     <div id="settings-error"></div>
                     <div class="form-group">
@@ -82,6 +90,21 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
                         <label for="countdown_seconds">Countdown Before Hand Starts (seconds)</label>
                         <input type="number" id="countdown_seconds" name="countdown_seconds" min="%d" max="%d" value="%d">
                     </div>
+                    <div class="form-group">
+                        <label for="real_deposits_enabled">Deposits</label>
+                        <select id="real_deposits_enabled" name="real_deposits_enabled">
+                            <option value="false"%s>Play money — any amount, credited instantly</option>
+                            <option value="true"%s>Real money — require a CBE transfer receipt</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="deposit_account_name">Deposit Account Name (must match the CBE receipt exactly)</label>
+                        <input type="text" id="deposit_account_name" name="deposit_account_name" maxlength="%d" value="%s">
+                    </div>
+                    <div class="form-group">
+                        <label for="deposit_account_number">Deposit Account Number (full number, as on your CBE account)</label>
+                        <input type="text" id="deposit_account_number" name="deposit_account_number" maxlength="%d" value="%s">
+                    </div>
                     <button type="submit" class="btn-gold btn-block">Save Settings</button>
                 </form>
             </section>
@@ -93,6 +116,14 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
                            hx-get="/api/admin/users" hx-trigger="keyup changed delay:300ms" hx-target="#admin-users-table">
                 </div>
                 <div id="admin-users-table" class="table-responsive">
+                    %s
+                </div>
+            </section>
+
+            <section class="admin-card admin-card-wide">
+                <h2>Bank Deposits Awaiting Review</h2>
+                <p class="muted">Receipts pasted while the bank verifier was unreachable. These are re-checked automatically every few minutes and credit themselves once the verifier answers — what stays here needed a person. <strong>Verify &amp; credit</strong> re-checks the receipt against the bank and never credits on trust alone. <strong>Credit manually</strong> is the escape hatch for a receipt the verifier simply cannot read: it credits the amount you type with no bank check at all, so read the amount off the receipt itself, and enter the FT reference whenever you can see it — that is what stops the same transfer being credited twice through its other link.</p>
+                <div id="admin-deposits-table" class="table-responsive">
                     %s
                 </div>
             </section>
@@ -130,7 +161,11 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
 		services.MinReferralPercentage, services.MaxReferralPercentage, settings.ReferralPercentagePctMode,
 		services.MinReferralPercentage, services.MaxReferralPercentage, settings.ReferralPercentageSbMode,
 		services.MinCountdownSeconds, services.MaxCountdownSeconds, settings.CountdownSeconds,
+		realDepositsOff, realDepositsOn,
+		services.MaxDepositAccountName, html.EscapeString(settings.DepositAccountName),
+		services.MaxDepositAccountNumber, html.EscapeString(settings.DepositAccountNumber),
 		renderAdminUsersTableHTML(users),
+		renderAdminDepositsTableHTML(pendingDeposits, ""),
 		renderAdminTransactionsTableHTML(txs),
 	)
 
@@ -208,4 +243,71 @@ func renderAdminTransactionsTableHTML(rows []adminTxRow) string {
         <thead><tr><th>User</th><th>Type</th><th>Amount</th><th>Tx ID</th><th>Date</th></tr></thead>
         <tbody>%s</tbody>
     </table>`, body)
+}
+
+// renderAdminDepositsTableHTML draws the review queue. Every value here except
+// the id came from a player's paste or from the bank's response, so all of it
+// is escaped — this table is the one place in the dashboard that renders text
+// this app never wrote.
+func renderAdminDepositsTableHTML(rows []repository.ListBankDepositsForReviewRow, notice string) string {
+	banner := ""
+	if notice != "" {
+		banner = fmt.Sprintf(`<div class="info-badge">%s</div>`, html.EscapeString(notice))
+	}
+
+	body := ""
+	if len(rows) == 0 {
+		body = `<tr><td colspan="4" class="text-center">Nothing waiting for review.</td></tr>`
+	}
+	for _, row := range rows {
+		d := row.BankDeposit
+		tried := "not yet re-checked"
+		switch {
+		case d.Attempts >= services.MaxQueueAttempts:
+			tried = fmt.Sprintf("%d attempts — automatic retry gave up", d.Attempts)
+		case d.Attempts > 0:
+			tried = fmt.Sprintf("%d automatic attempts", d.Attempts)
+		}
+		lastNote := ""
+		if d.Note != "" {
+			lastNote = fmt.Sprintf(`<br><span class="muted">%s</span>`, html.EscapeString(d.Note))
+		}
+		body += fmt.Sprintf(`
+        <tr>
+            <td>%s</td>
+            <td class="break-all"><a href="%s" target="_blank" rel="noopener noreferrer">%s</a></td>
+            <td>%s<br><span class="muted">%s</span>%s</td>
+            <td class="text-right">
+                <div class="deposit-actions">
+                    <button class="btn-gold btn-sm" hx-post="/api/admin/deposits/%d/approve" hx-target="#admin-deposits-table"
+                            hx-confirm="Re-check this receipt with the bank and credit it if it passes?">Verify &amp; credit</button>
+                    <button class="btn-outline btn-sm" hx-post="/api/admin/deposits/%d/reject" hx-target="#admin-deposits-table"
+                            hx-confirm="Reject this receipt? The player is not credited.">Reject</button>
+                </div>
+                <div class="deposit-manual">
+                    <input type="number" id="manual-amount-%d" name="amount" min="%d" max="%d" step="1" placeholder="Amount (ETB)">
+                    <input type="text" id="manual-reference-%d" name="reference" maxlength="64" placeholder="FT reference (recommended)">
+                    <button class="btn-outline btn-sm" hx-post="/api/admin/deposits/%d/credit"
+                            hx-include="#manual-amount-%d,#manual-reference-%d" hx-target="#admin-deposits-table"
+                            hx-confirm="Credit this player the amount you typed, without any bank check?">Credit manually</button>
+                </div>
+            </td>
+        </tr>`,
+			html.EscapeString(row.Username),
+			html.EscapeString(d.ReceiptUrl),
+			html.EscapeString(d.ReceiptUrl),
+			d.CreatedAt.UTC().Format(time.RFC822),
+			tried,
+			lastNote,
+			d.ID, d.ID,
+			d.ID, services.MinReceiptDeposit, services.MaxManualDeposit,
+			d.ID,
+			d.ID, d.ID, d.ID)
+	}
+
+	return fmt.Sprintf(`%s
+    <table class="data-table">
+        <thead><tr><th>Player</th><th>Receipt link</th><th>Submitted</th><th class="text-right">Action</th></tr></thead>
+        <tbody>%s</tbody>
+    </table>`, banner, body)
 }

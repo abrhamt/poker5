@@ -10,9 +10,10 @@ import (
 	"database/sql"
 )
 
-const createRoom = `-- name: CreateRoom :execresult
+const createRoom = `-- name: CreateRoom :one
 INSERT INTO poker_rooms (room_code, room_name, room_type, host_user_id, buy_in, small_blind, big_blind, max_players, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id
 `
 
 type CreateRoomParams struct {
@@ -27,8 +28,8 @@ type CreateRoomParams struct {
 	Status     string
 }
 
-func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, createRoom,
+func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createRoom,
 		arg.RoomCode,
 		arg.RoomName,
 		arg.RoomType,
@@ -39,12 +40,15 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (sql.Res
 		arg.MaxPlayers,
 		arg.Status,
 	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getRoomByCode = `-- name: GetRoomByCode :one
 SELECT id, room_code, room_name, room_type, host_user_id, buy_in, small_blind, big_blind, max_players, status, created_at
 FROM poker_rooms
-WHERE room_code = ? LIMIT 1
+WHERE room_code = $1 LIMIT 1
 `
 
 func (q *Queries) GetRoomByCode(ctx context.Context, roomCode string) (PokerRoom, error) {
@@ -113,8 +117,8 @@ func (q *Queries) ListActivePublicRooms(ctx context.Context) ([]PokerRoom, error
 
 const updateRoomStatus = `-- name: UpdateRoomStatus :exec
 UPDATE poker_rooms
-SET status = ?
-WHERE room_code = ?
+SET status = $1
+WHERE room_code = $2
 `
 
 type UpdateRoomStatusParams struct {

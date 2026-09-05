@@ -10,9 +10,10 @@ import (
 	"database/sql"
 )
 
-const createGame = `-- name: CreateGame :execresult
+const createGame = `-- name: CreateGame :one
 INSERT INTO poker_game (table_id, phase, pot, current_bet, last_raise, small_blind, big_blind, raises_this_round, dealer_orbit_count, game_started, game_finished, open_cards_mode, spectator_mode, initial_dealer_name, deck, card_graveyard, community_cards, current_player_index, total_hands, version, notifications, intermission, last_winner_json, pot_awards_json, intermission_started_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+RETURNING id
 `
 
 type CreateGameParams struct {
@@ -43,8 +44,8 @@ type CreateGameParams struct {
 	IntermissionStartedAt int64
 }
 
-func (q *Queries) CreateGame(ctx context.Context, arg CreateGameParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, createGame,
+func (q *Queries) CreateGame(ctx context.Context, arg CreateGameParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createGame,
 		arg.TableID,
 		arg.Phase,
 		arg.Pot,
@@ -71,16 +72,20 @@ func (q *Queries) CreateGame(ctx context.Context, arg CreateGameParams) (sql.Res
 		arg.PotAwardsJson,
 		arg.IntermissionStartedAt,
 	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
-const createPlayer = `-- name: CreatePlayer :execresult
-INSERT INTO poker_player (game_id, user_id, name, seat_index, is_bot, chips, round_bet, total_bet, folded, all_in, is_dealer, is_small_blind, is_big_blind, card1, card2, win_probability, stats_data)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+const createPlayer = `-- name: CreatePlayer :one
+INSERT INTO poker_player (game_id, user_id, name, seat_index, is_bot, chips, round_bet, total_bet, folded, all_in, is_dealer, is_small_blind, is_big_blind, card1, card2, win_probability, sitting_out, stats_data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+RETURNING id
 `
 
 type CreatePlayerParams struct {
 	GameID         int64
-	UserID         sql.NullInt64
+	UserID         int64
 	Name           string
 	SeatIndex      int32
 	IsBot          bool
@@ -95,11 +100,12 @@ type CreatePlayerParams struct {
 	Card1          sql.NullString
 	Card2          sql.NullString
 	WinProbability sql.NullFloat64
+	SittingOut     bool
 	StatsData      string
 }
 
-func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, createPlayer,
+func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createPlayer,
 		arg.GameID,
 		arg.UserID,
 		arg.Name,
@@ -116,12 +122,16 @@ func (q *Queries) CreatePlayer(ctx context.Context, arg CreatePlayerParams) (sql
 		arg.Card1,
 		arg.Card2,
 		arg.WinProbability,
+		arg.SittingOut,
 		arg.StatsData,
 	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deletePlayersByGameID = `-- name: DeletePlayersByGameID :exec
-DELETE FROM poker_player WHERE game_id = ?
+DELETE FROM poker_player WHERE game_id = $1
 `
 
 func (q *Queries) DeletePlayersByGameID(ctx context.Context, gameID int64) error {
@@ -132,7 +142,7 @@ func (q *Queries) DeletePlayersByGameID(ctx context.Context, gameID int64) error
 const getGameByTableID = `-- name: GetGameByTableID :one
 SELECT id, table_id, phase, pot, current_bet, last_raise, small_blind, big_blind, raises_this_round, dealer_orbit_count, game_started, game_finished, open_cards_mode, spectator_mode, initial_dealer_name, deck, card_graveyard, community_cards, current_player_index, total_hands, created_at, updated_at, version, notifications, intermission, last_winner_json, pot_awards_json, intermission_started_at
 FROM poker_game
-WHERE table_id = ? LIMIT 1
+WHERE table_id = $1 LIMIT 1
 `
 
 func (q *Queries) GetGameByTableID(ctx context.Context, tableID string) (PokerGame, error) {
@@ -172,9 +182,9 @@ func (q *Queries) GetGameByTableID(ctx context.Context, tableID string) (PokerGa
 }
 
 const getPlayersByGameID = `-- name: GetPlayersByGameID :many
-SELECT id, game_id, user_id, name, seat_index, is_bot, chips, round_bet, total_bet, folded, all_in, is_dealer, is_small_blind, is_big_blind, card1, card2, win_probability, stats_data
+SELECT id, game_id, user_id, name, seat_index, is_bot, chips, round_bet, total_bet, folded, all_in, is_dealer, is_small_blind, is_big_blind, card1, card2, win_probability, sitting_out, stats_data
 FROM poker_player
-WHERE game_id = ?
+WHERE game_id = $1
 ORDER BY seat_index ASC
 `
 
@@ -205,6 +215,7 @@ func (q *Queries) GetPlayersByGameID(ctx context.Context, gameID int64) ([]Poker
 			&i.Card1,
 			&i.Card2,
 			&i.WinProbability,
+			&i.SittingOut,
 			&i.StatsData,
 		); err != nil {
 			return nil, err
@@ -222,8 +233,8 @@ func (q *Queries) GetPlayersByGameID(ctx context.Context, gameID int64) ([]Poker
 
 const updateGame = `-- name: UpdateGame :exec
 UPDATE poker_game
-SET phase = ?, pot = ?, current_bet = ?, last_raise = ?, small_blind = ?, big_blind = ?, raises_this_round = ?, dealer_orbit_count = ?, game_started = ?, game_finished = ?, open_cards_mode = ?, spectator_mode = ?, initial_dealer_name = ?, deck = ?, card_graveyard = ?, community_cards = ?, current_player_index = ?, total_hands = ?, version = version + 1, notifications = ?, intermission = ?, last_winner_json = ?, pot_awards_json = ?, intermission_started_at = ?
-WHERE id = ? AND version = ?
+SET phase = $1, pot = $2, current_bet = $3, last_raise = $4, small_blind = $5, big_blind = $6, raises_this_round = $7, dealer_orbit_count = $8, game_started = $9, game_finished = $10, open_cards_mode = $11, spectator_mode = $12, initial_dealer_name = $13, deck = $14, card_graveyard = $15, community_cards = $16, current_player_index = $17, total_hands = $18, version = version + 1, notifications = $19, intermission = $20, last_winner_json = $21, pot_awards_json = $22, intermission_started_at = $23, updated_at = NOW()
+WHERE id = $24 AND version = $25
 `
 
 type UpdateGameParams struct {

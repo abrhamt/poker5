@@ -59,7 +59,7 @@ func (s *WalletService) EnsureHouseAccount(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 
-	res, err := s.q.CreateUser(ctx, repository.CreateUserParams{
+	id, err := s.q.CreateUser(ctx, repository.CreateUserParams{
 		Username:     houseUsername,
 		PhoneNumber:  "house-system-account",
 		PasswordHash: passHash,
@@ -68,10 +68,6 @@ func (s *WalletService) EnsureHouseAccount(ctx context.Context) (int64, error) {
 		ReferredBy:   sql.NullString{},
 		Role:         "house",
 	})
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
@@ -113,27 +109,40 @@ func (s *WalletService) CashOut(ctx context.Context, userID int64, amount int64)
 	return s.moveWallet(ctx, userID, amount, TxTypeCashOut, "cash_out")
 }
 
+// DepositWith credits a deposit through the caller's own queries handle, so a
+// bank deposit can move the wallet inside the same database transaction that
+// claims the receipt. Crediting money and recording which receipt paid for it
+// have to commit together or not at all — a wallet credit whose receipt row
+// was rolled back is money with no reference, and the reference is the only
+// thing stopping the same receipt from being spent twice.
+func (s *WalletService) DepositWith(ctx context.Context, q *repository.Queries, userID int64, amount int64, reason string) (*repository.Transaction, error) {
+	if amount <= 0 {
+		return nil, errors.New("invalid deposit amount")
+	}
+	return s.moveWalletWith(ctx, q, userID, amount, TxTypeDeposit, reason)
+}
+
 func (s *WalletService) moveWallet(ctx context.Context, userID int64, delta int64, txType, reason string) (*repository.Transaction, error) {
+	return s.moveWalletWith(ctx, s.q, userID, delta, txType, reason)
+}
+
+func (s *WalletService) moveWalletWith(ctx context.Context, q *repository.Queries, userID int64, delta int64, txType, reason string) (*repository.Transaction, error) {
 	txID, err := utilities.GenerateTxID()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.q.UpdateUserWallet(ctx, repository.UpdateUserWalletParams{Wallet: delta, ID: userID}); err != nil {
+	if err := q.UpdateUserWallet(ctx, repository.UpdateUserWalletParams{Wallet: delta, ID: userID}); err != nil {
 		return nil, err
 	}
 
-	res, err := s.q.CreateTransaction(ctx, repository.CreateTransactionParams{
+	id, err := q.CreateTransaction(ctx, repository.CreateTransactionParams{
 		UserID:        userID,
 		Amount:        delta,
 		Type:          txType,
 		Reason:        reason,
 		TransactionID: txID,
 	})
-	if err != nil {
-		return nil, err
-	}
-	id, err := res.LastInsertId()
 	if err != nil {
 		return nil, err
 	}

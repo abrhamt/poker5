@@ -1,4 +1,13 @@
-import type { PokerAction, PublicRoom, TableState, TransactionPage, User, BlindTier } from './types'
+import type {
+  BlindTier,
+  DepositInfo,
+  DepositOutcome,
+  PokerAction,
+  PublicRoom,
+  TableState,
+  TransactionPage,
+  User,
+} from './types'
 
 /** Thrown for any non-2xx response, carrying the server's `error` message so
  *  callers can render it verbatim instead of a generic failure string. */
@@ -54,12 +63,25 @@ export const api = {
     me: () => request<{ user: User }>('/api/auth/me').then((r) => r.user),
     login: (login: string, password: string) =>
       post<{ token: string; user: User }>('/api/auth/login', { login, password }),
+    /** Starts a signup. No account exists until `verifyOtp` succeeds; the
+     *  normalized phone comes back so the verify screen can use the canonical
+     *  form rather than whatever the user typed. */
     register: (input: {
       username: string
       phone_number: string
       password: string
       referral_code?: string
-    }) => post<{ user: User }>('/api/auth/register', input),
+    }) => post<{ phone_number: string }>('/api/auth/register', input),
+    verifyOtp: (phone_number: string, code: string) =>
+      post<{ user: User }>('/api/auth/verify-otp', { phone_number, code }),
+    resendOtp: (phone_number: string, purpose: 'register' | 'reset') =>
+      post<{ message: string }>('/api/auth/resend-otp', { phone_number, purpose }),
+    forgotPassword: (phone_number: string) =>
+      post<{ phone_number: string }>('/api/auth/forgot-password', { phone_number }),
+    verifyResetOtp: (phone_number: string, code: string) =>
+      post<{ reset_token: string }>('/api/auth/verify-reset-otp', { phone_number, code }),
+    resetPassword: (reset_token: string, password: string) =>
+      post<{ user: User }>('/api/auth/reset-password', { reset_token, password }),
     logout: () => post<{ message: string }>('/api/auth/logout'),
   },
 
@@ -92,5 +114,14 @@ export const api = {
       return request<TransactionPage>(`/api/wallet/transactions?${query}`)
     },
     deposit: (amount: number) => post<{ transaction_id: string }>('/api/wallet/deposit', { amount }),
+    /** Which deposit form to render, and the account to send money to. The
+     *  account is never hardcoded in the bundle: a stale build would otherwise
+     *  keep pointing players at an account the site no longer holds. */
+    depositInfo: () => request<DepositInfo>('/api/wallet/deposit-info'),
+    /** Submits the pasted CBE SMS. The whole message goes up, not just the
+     *  link this app extracted from it — the server does its own extraction
+     *  and that is the one that decides. */
+    depositReceipt: (message: string) =>
+      post<DepositOutcome>('/api/wallet/deposit/receipt', { message }),
   },
 }

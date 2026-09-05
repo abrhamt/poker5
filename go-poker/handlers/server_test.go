@@ -8,35 +8,32 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	poker "github.com/zuse/poker5/go-poker"
+	"github.com/zuse/poker5/go-poker/internal/testdb"
 	"github.com/zuse/poker5/go-poker/repository"
 	"github.com/zuse/poker5/go-poker/services"
-	_ "modernc.org/sqlite"
 )
+
+func TestMain(m *testing.M) {
+	os.Exit(testdb.RunMain(m))
+}
 
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite in-memory: %v", err)
-	}
-
-	if err := repository.InitDBSchema(db); err != nil {
-		t.Fatalf("execute InitDBSchema: %v", err)
-	}
-	return db
+	return testdb.New(t)
 }
 
 func TestFiberServerRoutes(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	srv := NewFiberServer(db)
+	srv, sender := newTestServer(t, db)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	resp, err := srv.App.Test(req)
@@ -44,18 +41,7 @@ func TestFiberServerRoutes(t *testing.T) {
 		t.Fatalf("health check failed: %v", err)
 	}
 
-	regPayload, _ := json.Marshal(map[string]string{
-		"username":     "alice",
-		"phone_number": "0911223344",
-		"password":     "password123",
-	})
-
-	req = httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(regPayload))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err = srv.App.Test(req)
-	if err != nil || resp.StatusCode != http.StatusCreated {
-		t.Fatalf("register failed: %v", err)
-	}
+	registerAndVerify(t, srv, sender, "alice", "0911223344", "password123")
 
 	loginPayload, _ := json.Marshal(map[string]string{
 		"login":    "alice",
@@ -164,7 +150,7 @@ func TestGameServiceTwoPlayerHand(t *testing.T) {
 	defer db.Close()
 
 	q := repository.New(db)
-	authSvc := services.NewAuthService(q)
+	authSvc := services.NewAuthService(q, db, &recordingSender{})
 	walletSvc := services.NewWalletService(q)
 	sseHub := services.NewSSEHub()
 	roomSvc := services.NewRoomService(q)
@@ -263,26 +249,15 @@ func TestSessionExpirySlides(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	srv := NewFiberServer(db)
+	srv, sender := newTestServer(t, db)
 
-	regPayload, _ := json.Marshal(map[string]string{
-		"username":     "slider",
-		"phone_number": "0911224477",
-		"password":     "password123",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(regPayload))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := srv.App.Test(req)
-	if err != nil || resp.StatusCode != http.StatusCreated {
-		t.Fatalf("register failed: %v", err)
-	}
-	cookie := strings.Split(resp.Header.Get("Set-Cookie"), ";")[0]
+	cookie := strings.Split(registerAndVerify(t, srv, sender, "slider", "0911224477", "password123"), ";")[0]
 	token := strings.TrimPrefix(cookie, "poker_session=")
 
 	expiry := func() time.Time {
 		t.Helper()
 		var out time.Time
-		row := srv.DB.QueryRow("SELECT expires_at FROM user_sessions WHERE session_token = ?", token)
+		row := srv.DB.QueryRow("SELECT expires_at FROM user_sessions WHERE session_token = $1", token)
 		if err := row.Scan(&out); err != nil {
 			t.Fatalf("read session expiry: %v", err)
 		}
@@ -291,7 +266,7 @@ func TestSessionExpirySlides(t *testing.T) {
 	setSession := func(expiresAt, createdAt time.Time) {
 		t.Helper()
 		if _, err := srv.DB.Exec(
-			"UPDATE user_sessions SET expires_at = ?, created_at = ? WHERE session_token = ?",
+			"UPDATE user_sessions SET expires_at = $1, created_at = $2 WHERE session_token = $3",
 			expiresAt, createdAt, token,
 		); err != nil {
 			t.Fatalf("age session: %v", err)
@@ -342,20 +317,9 @@ func TestSessionCookieSecureFlag(t *testing.T) {
 
 		db := setupTestDB(t)
 		defer db.Close()
-		srv := NewFiberServer(db)
+		srv, sender := newTestServer(t, db)
 
-		regPayload, _ := json.Marshal(map[string]string{
-			"username":     "cookie",
-			"phone_number": "0911224488",
-			"password":     "password123",
-		})
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(regPayload))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := srv.App.Test(req)
-		if err != nil || resp.StatusCode != http.StatusCreated {
-			t.Fatalf("register failed: %v", err)
-		}
-		return resp.Header.Get("Set-Cookie")
+		return registerAndVerify(t, srv, sender, "cookie", "0911224488", "password123")
 	}
 
 	off := login(t, "")
@@ -381,29 +345,18 @@ func TestWalletTransactionsPagination(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	srv := NewFiberServer(db)
+	srv, sender := newTestServer(t, db)
 
-	regPayload, _ := json.Marshal(map[string]string{
-		"username":     "ledger",
-		"phone_number": "0911223399",
-		"password":     "password123",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(regPayload))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := srv.App.Test(req)
-	if err != nil || resp.StatusCode != http.StatusCreated {
-		t.Fatalf("register failed: %v", err)
-	}
-	cookie := strings.Split(resp.Header.Get("Set-Cookie"), ";")[0]
+	cookie := strings.Split(registerAndVerify(t, srv, sender, "ledger", "0911223399", "password123"), ";")[0]
 
 	// One more deposit than a page holds, so there is a second page to reach.
 	deposits := services.DefaultTransactionsPageSize + 3
 	for i := 0; i < deposits; i++ {
 		body, _ := json.Marshal(map[string]int64{"amount": int64(10 + i)})
-		req = httptest.NewRequest(http.MethodPost, "/api/wallet/deposit", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/wallet/deposit", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Cookie", cookie)
-		resp, err = srv.App.Test(req)
+		resp, err := srv.App.Test(req)
 		if err != nil || resp.StatusCode != http.StatusOK {
 			t.Fatalf("deposit %d failed: %v", i, err)
 		}
@@ -476,7 +429,7 @@ func TestUnroutedPathsReturnJSON(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	srv := NewFiberServer(db)
+	srv := newTestServerNoSMS(t, db)
 
 	for _, path := range []string{
 		"/api/does-not-exist",
@@ -509,7 +462,7 @@ func TestAdminDashboardStillRenders(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	srv := NewFiberServer(db)
+	srv := newTestServerNoSMS(t, db)
 
 	loginPayload, _ := json.Marshal(map[string]string{
 		"login":    "admin",

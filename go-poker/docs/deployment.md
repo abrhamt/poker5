@@ -24,18 +24,26 @@ Config lives in [`deploy/Caddyfile`](../deploy/Caddyfile) and
 
 From `go-poker/`:
 
-    # Static binary. The SQLite driver is pure Go, so cgo is not needed and the
-    # result runs on any Linux box regardless of its glibc.
+    # Static binary. The PostgreSQL driver (pgx) is pure Go, so cgo is not
+    # needed and the result runs on any Linux box regardless of its glibc.
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o poker-server ./cmd/poker-demo
 
     cd frontend && npm ci && npm run build && cd ..
 
-## 2. Server layout
+## 2. PostgreSQL
+
+    sudo apt install postgresql          # or your distribution's package
+    sudo -u postgres createuser poker --pwprompt
+    sudo -u postgres createdb poker --owner=poker
+
+Nothing else: the server creates its own tables on start-up, and re-runs the
+migrations every time, so a deploy that adds a column needs no manual step.
+
+## 3. Server layout
 
     /srv/poker/                     owned by the poker user
         poker-server                the binary
-        .env                        secrets and settings
-        poker.db                    SQLite database, created on first start
+        .env                        secrets and settings, including DATABASE_URL
 
     /var/www/html/goldenpoker/dist/ owned by caddy, the whole of frontend/dist
 
@@ -46,7 +54,7 @@ Prepare them:
     sudo chown -R poker:poker /srv/poker
     sudo chown -R caddy:caddy /var/www/html/goldenpoker
 
-## 3. Upload
+## 4. Upload
 
     # API
     rsync -av poker-server .env root@YOUR_SERVER:/srv/poker/
@@ -58,12 +66,19 @@ Prepare them:
 `--delete` clears out asset files from previous builds, whose hashed names no
 longer match anything.
 
-## 4. `.env`
+## 5. `.env`
 
     ADMIN_USERNAME=admin
     ADMIN_PHONE=0900000000
+    DATABASE_URL=postgres://poker:<a real password>@localhost:5432/poker?sslmode=disable
     ADMIN_PASSWORD=<a real password>
     SESSION_COOKIE_SECURE=true
+    GEEZSMS_TOKEN=<your GeezSMS API token>
+
+`DATABASE_URL` has no default and the server refuses to start without it — a
+fallback connection string would let a misconfigured box come up pointed at the
+wrong database. The schema is created and migrated on start-up, so an empty
+database is all that is needed.
 
 `SESSION_COOKIE_SECURE=true` is the one that matters. Caddy gives you HTTPS, so
 the session cookie should carry the `Secure` attribute — without it the cookie
@@ -73,12 +88,17 @@ you set it.
 `ADMIN_PASSWORD` is re-applied on **every** start, so this file is the source of
 truth for the admin password; changing it in the database does nothing.
 
+`GEEZSMS_TOKEN` is what makes verification codes leave the machine. Without it
+the server keeps the console sender, which outside `APP_ENV=development`
+refuses to send — so registration and password reset both return `502` until
+the token is in place.
+
 Real environment variables win over `.env`, which is why the unit file's
 `Environment=` line overrides it regardless of what the file says.
 
     sudo chown poker:poker /srv/poker/.env && sudo chmod 600 /srv/poker/.env
 
-## 5. systemd
+## 6. systemd
 
     sudo cp deploy/poker.service /etc/systemd/system/poker.service
     sudo systemctl daemon-reload
@@ -90,7 +110,7 @@ Check it came up on loopback and nowhere else:
     curl -s http://127.0.0.1:9011/health    # {"status":"ok",...}
     ss -ltnp | grep 9011                    # must show 127.0.0.1:9011
 
-## 6. Caddy
+## 7. Caddy
 
     sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
     sudo sed -i 's/poker.example.com/YOUR_DOMAIN/' /etc/caddy/Caddyfile
@@ -101,7 +121,7 @@ Point the domain's A record at the server first — Caddy needs to answer an ACM
 challenge on :80 before it can issue a certificate. Ports 80 and 443 must be
 open; **9011 must not be.**
 
-## 7. Verify
+## 8. Verify
 
     curl -sI https://YOUR_DOMAIN/                      # 200, Cache-Control: no-store
     curl -sI https://YOUR_DOMAIN/lobby                 # 200 — SPA fallback
@@ -133,7 +153,7 @@ Back end:
     ssh root@YOUR_SERVER 'systemctl restart poker'
 
 A restart drops every open SSE connection; browsers reconnect on their own, and
-seated players keep their chips because table state is persisted to SQLite. Do
+seated players keep their chips because table state is persisted to PostgreSQL. Do
 still avoid restarting mid-hand — the turn timer keeps running, and a player who
 cannot reconnect in time gets folded.
 
@@ -159,6 +179,12 @@ cannot parse. Use the `handle` blocks in `deploy/Caddyfile`.
 **502 on /api.** Caddy is right, the API is not running. `curl
 localhost:9011/health` on the box, then check `poker.log`.
 
+**The service exits immediately with a database error.** `DATABASE_URL` is
+missing, wrong, or PostgreSQL is not accepting the connection. The server pings
+the database before it serves anything, so this fails at start-up rather than on
+the first request — check the message in `journalctl -u poker`, then try the
+same URL with `psql "$DATABASE_URL" -c 'select 1'`.
+
 **The binary exits 127.** "Not found", which for a present file usually means it
 was built with cgo enabled and is dynamically linked against a glibc the server
 does not have. Rebuild with `CGO_ENABLED=0`; confirm with `file poker-server`,
@@ -170,9 +196,10 @@ drops a `Secure` cookie on a non-secure origin.
 
 ## Notes
 
-- **Back up `/srv/poker/poker.db`.** It holds wallets, and it is the only copy.
-  `sqlite3 poker.db ".backup /path/backup.db"` is safe to run while the server
-  is live.
+- **Back up the database.** It holds wallets. `pg_dump` is safe to run while
+  the server is live:
+
+      sudo -u postgres pg_dump poker | gzip > /path/poker-$(date +%F).sql.gz
 - The API answers JSON for every unrouted path, including `/`. If you open the
   binary's port directly and get `{"error":"not found"}`, that is correct — the
   app is at the domain Caddy serves.

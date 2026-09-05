@@ -175,3 +175,24 @@ export const emptyTableState = (roomCode: string): TableState => ({
   countdown_ends_at_ms: 0,
   intermission_ends_at_ms: 0,
 })
+
+/** What the deposit screen needs before it can render. The account fields are
+ *  only present when real deposits are on — while the toggle is off the server
+ *  withholds them rather than advertising a half-configured account. */
+export type DepositInfo = {
+  real_deposits_enabled: boolean
+  account_name?: string
+  account_number?: string
+  min_amount?: number
+}
+
+/** The result of submitting a receipt. `pending_review` is not a failure: the
+ *  transfer is real and kept on file, it just could not be checked with the
+ *  bank yet. */
+export type DepositOutcome = {
+  status: 'credited' | 'pending_review'
+  amount: number
+  reference?: string
+  transaction_id?: string
+  message: string
+}

@@ -1962,3 +1962,58 @@ body.poker-app {
         margin: 0 auto;
     }
 }
+
+/* ---------- Deposit review queue ----------
+   The table alongside Site Settings, listing receipts pasted while the bank
+   verifier was unreachable. */
+.info-badge {
+    background: rgba(212, 175, 55, 0.12);
+    border: 1px solid rgba(212, 175, 55, 0.45);
+    color: var(--gold-light, #e8d48a);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 0.88rem;
+    margin-bottom: 16px;
+}
+
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+
+/* Deposit review actions. The two rows are kept apart on purpose: the top row
+   is the safe path (the bank decides), the bottom one credits on the admin's
+   own figure, and they should not read as four equivalent buttons. */
+.deposit-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.deposit-manual {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-subtle);
+}
+
+.deposit-manual input {
+    background: var(--bg-input, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: inherit;
+    padding: 7px 10px;
+    font-size: 0.82rem;
+}
+
+.deposit-manual input[name="amount"] { width: 110px; }
+.deposit-manual input[name="reference"] { width: 160px; }
+
+/* Receipt links are one long unbroken token, so they need an explicit break
+   rule or they force the whole table wider than the card. */
+.break-all {
+    word-break: break-all;
+    max-width: 320px;
+}

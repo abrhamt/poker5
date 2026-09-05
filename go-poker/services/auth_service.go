@@ -39,10 +39,16 @@ var (
 
 type AuthService struct {
 	q *repository.Queries
+	// db backs the handful of flows that need a transaction (see
+	// VerifyRegistration and ResetPassword, where two writes must agree).
+	db *sql.DB
+	// sender delivers verification codes. See otp_sender.go — it is the only
+	// seam between this service and an SMS provider.
+	sender OTPSender
 }
 
-func NewAuthService(q *repository.Queries) *AuthService {
-	return &AuthService{q: q}
+func NewAuthService(q *repository.Queries, db *sql.DB, sender OTPSender) *AuthService {
+	return &AuthService{q: q, db: db, sender: sender}
 }
 
 type RegisterRequest struct {
@@ -57,6 +63,10 @@ type LoginRequest struct {
 	Password string `json:"password" form:"password"`
 }
 
+// Register creates an account directly, with no phone verification. It is no
+// longer reachable over HTTP — signup goes through StartRegistration and
+// VerifyRegistration (see auth_otp.go) — and remains here as the primitive used
+// by tests and internal tooling.
 func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*repository.User, error) {
 	if req.Username == "" || req.PhoneNumber == "" || req.Password == "" {
 		return nil, errors.New("missing required fields")
@@ -97,7 +107,7 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*repos
 		return nil, err
 	}
 
-	res, err := s.q.CreateUser(ctx, repository.CreateUserParams{
+	id, err := s.q.CreateUser(ctx, repository.CreateUserParams{
 		Username:     req.Username,
 		PhoneNumber:  req.PhoneNumber,
 		PasswordHash: passHash,
@@ -106,11 +116,6 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*repos
 		ReferredBy:   referrerCode,
 		Role:         "player",
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	id, err := res.LastInsertId()
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +195,7 @@ func (s *AuthService) EnsureAdminUser(ctx context.Context, username, phoneNumber
 		return nil, err
 	}
 
-	res, err := s.q.CreateUser(ctx, repository.CreateUserParams{
+	id, err := s.q.CreateUser(ctx, repository.CreateUserParams{
 		Username:     username,
 		PhoneNumber:  phoneNumber,
 		PasswordHash: passHash,
@@ -199,10 +204,6 @@ func (s *AuthService) EnsureAdminUser(ctx context.Context, username, phoneNumber
 		ReferredBy:   sql.NullString{},
 		Role:         "admin",
 	})
-	if err != nil {
-		return nil, err
-	}
-	id, err := res.LastInsertId()
 	if err != nil {
 		return nil, err
 	}

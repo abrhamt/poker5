@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { otpFlow } from '../lib/otpFlow'
 import { AuthShell, ErrorNote, PasswordField } from '../components/AuthShell'
 
 export default function Register() {
@@ -15,13 +16,16 @@ export default function Register() {
     setError('')
     setBusy(true)
     try {
-      await register({
+      // No account exists yet — this only sends a code. The account is created
+      // when the code is verified on the next screen.
+      const phone = await register({
         username: String(form.get('username')),
         phone_number: String(form.get('phone_number')),
         password: String(form.get('password')),
         referral_code: String(form.get('referral_code') ?? '') || undefined,
       })
-      navigate('/lobby', { replace: true })
+      otpFlow.setPhone(phone)
+      navigate('/verify-phone', { state: { phone } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed.')
     } finally {
@@ -81,7 +85,7 @@ export default function Register() {
         </div>
 
         <button type="submit" className="btn-primary mt-1 w-full" disabled={busy}>
-          {busy ? 'Creating account…' : 'Create Account'}
+          {busy ? 'Sending code…' : 'Create Account'}
         </button>
       </form>
 

@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+type BankDeposit struct {
+	ID            int64
+	UserID        int64
+	Provider      string
+	ReceiptUrl    string
+	Reference     sql.NullString
+	Amount        int64
+	PayerName     string
+	PayerAccount  string
+	Status        string
+	Note          string
+	TransactionID sql.NullString
+	Attempts      int32
+	LastAttemptAt int64
+	CreatedAt     time.Time
+	ResolvedAt    int64
+}
+
 type GameSession struct {
 	ID               int64
 	TableID          string
@@ -20,6 +38,44 @@ type GameSession struct {
 	HandName         string
 	DetailsJson      string
 	CreatedAt        time.Time
+}
+
+type OtpSendThrottle struct {
+	ID              int64
+	PhoneNumber     string
+	Purpose         string
+	WindowStartedAt int64
+	LastSentAt      int64
+	SendCount       int32
+}
+
+type PasswordResetCode struct {
+	ID             int64
+	UserID         int64
+	PhoneNumber    string
+	Code           string
+	Attempts       int32
+	ExpiresAt      int64
+	ResetToken     sql.NullString
+	TokenExpiresAt int64
+	CreatedAt      time.Time
+}
+
+type PendingRegistration struct {
+	ID           int64
+	Username     string
+	PhoneNumber  string
+	PasswordHash string
+	ReferredBy   sql.NullString
+	Code         string
+	Attempts     int32
+	ExpiresAt    int64
+	CreatedAt    time.Time
+}
+
+type PokerConfig struct {
+	Key   string
+	Value string
 }
 
 type PokerGame struct {
@@ -56,7 +112,7 @@ type PokerGame struct {
 type PokerPlayer struct {
 	ID             int64
 	GameID         int64
-	UserID         sql.NullInt64
+	UserID         int64
 	Name           string
 	SeatIndex      int32
 	IsBot          bool
@@ -71,6 +127,7 @@ type PokerPlayer struct {
 	Card1          sql.NullString
 	Card2          sql.NullString
 	WinProbability sql.NullFloat64
+	SittingOut     bool
 	StatsData      string
 }
 
@@ -95,6 +152,9 @@ type SiteSetting struct {
 	ReferralPercentagePctMode float64
 	ReferralPercentageSbMode  float64
 	CountdownSeconds          int32
+	RealDepositsEnabled       bool
+	DepositAccountName        string
+	DepositAccountNumber      string
 	UpdatedAt                 time.Time
 }
 

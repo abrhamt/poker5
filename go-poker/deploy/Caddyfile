@@ -40,9 +40,15 @@ goldenpoker.example.com {
 		# not be cached at all: a stale index.html would point browsers at
 		# asset names that no longer exist. The matchers are mutually
 		# exclusive so none can override another.
-		@immutable path /assets/*
-		@stable path /cards/* /legacy/*
-		@volatile not path /assets/* /cards/* /legacy/*
+		#
+		# /legacy/ is deliberately not in the week-long group: admin.css and
+		# admin.js ship under fixed names and do change with a release, so a
+		# long cache would leave admins on the previous build's dashboard with
+		# no way to tell. Only the vendored htmx, which is version-pinned in
+		# its filename, is safe to keep.
+		@immutable path /assets/* /legacy/htmx.min.js
+		@stable path /cards/*
+		@volatile not path /assets/* /cards/* /legacy/htmx.min.js
 		header @immutable Cache-Control "public, max-age=31536000, immutable"
 		header @stable Cache-Control "public, max-age=604800"
 		header @volatile Cache-Control "no-store"

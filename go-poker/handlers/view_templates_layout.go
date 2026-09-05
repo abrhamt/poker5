@@ -49,7 +49,12 @@ func renderBaseLayout(title, content, currentUsername string) string {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/legacy/admin.css">
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <!-- htmx is served from our own origin, not a CDN. Every control on this
+         page is an hx- attribute, so a CDN that is slow, blocked, or
+         unreachable does not degrade the dashboard, it disables it: the
+         buttons stop responding and forms fall back to a plain GET that
+         silently discards what was typed. -->
+    <script src="/legacy/htmx.min.js"></script>
 </head>
 <body class="poker-app">
     %s

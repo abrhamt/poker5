@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import type { TransactionPage } from '../lib/types'
+import { extractCbeReceiptUrl } from '../lib/cbeReceipt'
+import type { DepositInfo, TransactionPage } from '../lib/types'
 import { useAuth } from '../lib/auth'
 import { useToast } from '../components/Toast'
 import { DrawerLink, SideDrawer } from '../components/SideDrawer'
@@ -20,6 +21,7 @@ export default function Wallet() {
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [depositOpen, setDepositOpen] = useState(false)
+  const [depositInfo, setDepositInfo] = useState<DepositInfo | null>(null)
 
   // The ledger measures how many rows fit and asks for exactly that many, so
   // this screen owns the viewport the same way the lobby and table do.
@@ -32,6 +34,26 @@ export default function Wallet() {
       document.body.style.overflow = previous
     }
   }, [])
+
+  // Which deposit form to show is the server's call, and it can change while
+  // someone has the app open — so it is read when the sheet opens rather than
+  // once at mount.
+  useEffect(() => {
+    if (!depositOpen) return
+    let cancelled = false
+    api.wallet
+      .depositInfo()
+      .then((info) => {
+        if (!cancelled) setDepositInfo(info)
+      })
+      .catch(() => {
+        // Leave whatever was last known: a failed config read should not
+        // silently downgrade a real-money site to the play-money form.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [depositOpen])
 
   const load = useCallback(
     async (next: number) => {
@@ -72,6 +94,28 @@ export default function Wallet() {
       setDepositOpen(false)
       // A deposit is the newest row, so jump back to the top of the ledger.
       await Promise.all([refresh(), load(1)])
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Deposit failed.', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function submitReceipt(message: string) {
+    setBusy(true)
+    try {
+      const outcome = await api.wallet.depositReceipt(message)
+      if (outcome.status === 'credited') {
+        toast(outcome.message, 'success')
+        setDepositOpen(false)
+        await Promise.all([refresh(), load(1)])
+      } else {
+        // Queued for review. The sheet stays closed and the message stays on
+        // screen: there is nothing more for the player to do, and re-sending
+        // the money is the one thing they must not do.
+        toast(outcome.message, 'success')
+        setDepositOpen(false)
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Deposit failed.', 'error')
     } finally {
@@ -161,7 +205,11 @@ export default function Wallet() {
       </SideDrawer>
 
       <Sheet open={depositOpen} title="Deposit ETB" onClose={() => setDepositOpen(false)}>
-        <DepositForm busy={busy} onSubmit={deposit} />
+        {depositInfo?.real_deposits_enabled ? (
+          <ReceiptDepositForm busy={busy} info={depositInfo} onSubmit={submitReceipt} />
+        ) : (
+          <DepositForm busy={busy} onSubmit={deposit} />
+        )}
       </Sheet>
     </div>
   )
@@ -220,6 +268,99 @@ function DepositForm({
 
       <button type="submit" className="btn-gold w-full" disabled={busy}>
         {busy ? 'Processing…' : 'Confirm deposit'}
+      </button>
+    </form>
+  )
+}
+
+/** The real-money deposit form: transfer first, then paste the SMS CBE sends
+ *  back. The link inside that message is the receipt, and the bank is what
+ *  confirms it — so this form's job is to make sure a link is actually in
+ *  there before anyone waits on a request. */
+function ReceiptDepositForm({
+  busy,
+  info,
+  onSubmit,
+}: {
+  busy: boolean
+  info: DepositInfo
+  onSubmit: (message: string) => void | Promise<void>
+}) {
+  const [message, setMessage] = useState('')
+  const [copied, setCopied] = useState<'name' | 'number' | null>(null)
+
+  const trimmed = message.trim()
+  const parsed = trimmed === '' ? null : extractCbeReceiptUrl(trimmed)
+
+  async function copy(value: string, which: 'name' | 'number') {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(which)
+      window.setTimeout(() => setCopied(null), 1500)
+    } catch {
+      // Clipboard access is denied often enough (insecure origin, permission
+      // prompt) that failing quietly is better than an error toast — the value
+      // is on screen to be read either way.
+    }
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (parsed?.ok) void onSubmit(trimmed)
+      }}
+      className="flex flex-col gap-3.5"
+    >
+      <div className="rounded-xl border border-gold/25 bg-gold/5 p-3">
+        <p className="text-[10px] tracking-wide text-muted uppercase">Send your transfer to</p>
+        <button
+          type="button"
+          onClick={() => void copy(info.account_number ?? '', 'number')}
+          className="mt-1 block w-full text-left font-mono text-lg font-bold tracking-wide text-gold-light tabular-nums"
+        >
+          {info.account_number}
+        </button>
+        <button
+          type="button"
+          onClick={() => void copy(info.account_name ?? '', 'name')}
+          className="block w-full text-left text-sm font-semibold text-chalk"
+        >
+          {info.account_name}
+        </button>
+        <p className="mt-1 text-[11px] text-muted">
+          {copied ? 'Copied.' : 'Tap either line to copy. Commercial Bank of Ethiopia.'}
+        </p>
+      </div>
+
+      <div>
+        <label className="label" htmlFor="receipt">
+          Paste the CBE confirmation SMS
+        </label>
+        <textarea
+          id="receipt"
+          name="receipt"
+          rows={5}
+          required
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Dear ... You have successfully transferred ETB50.00 ... https://mbreciept.cbe.com.et/..."
+          className="field resize-none text-xs leading-relaxed"
+        />
+      </div>
+
+      {parsed?.ok === false && <p className="text-[11px] text-red-400">{parsed.reason}</p>}
+      {parsed?.ok && (
+        <p className="text-[11px] break-all text-emerald-400">Receipt link found: {parsed.url}</p>
+      )}
+
+      <p className="text-[11px] leading-relaxed text-muted">
+        Paste the whole message — the link at the end is the receipt. We check it with the bank, so
+        it only counts once and only if it was sent to the account above.
+      </p>
+
+      <button type="submit" className="btn-gold w-full" disabled={busy || !parsed?.ok}>
+        {busy ? 'Checking with the bank…' : 'Submit receipt'}
       </button>
     </form>
   )

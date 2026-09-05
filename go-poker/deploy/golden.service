@@ -1,0 +1,44 @@
+# systemd unit for the Go server as deployed to /root/src/golden.
+# Install to /etc/systemd/system/golden.service
+[Unit]
+Description=Golden Poker API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# The binary lives under /root, which only root can read, so the service runs
+# as root. Moving it to /srv/poker and running as an unprivileged user is the
+# safer arrangement — see deploy/poker.service for that variant.
+User=root
+Group=root
+
+# Required, not cosmetic: the server reads ./.env relative to its working
+# directory, so without this it would come up with no DATABASE_URL and exit.
+WorkingDirectory=/root/src/golden
+
+# Bound to loopback on purpose: Caddy is the only thing that should be able to
+# reach the app. Publishing 9011 on a public interface would expose the API
+# over plain HTTP, bypassing TLS entirely.
+ExecStart=/root/src/golden/poker-server -mode=server -addr=127.0.0.1:9011
+
+Restart=always
+RestartSec=3
+
+# The app reads /root/src/golden/.env itself, but real environment variables
+# take precedence over that file, so anything set here wins.
+Environment=SESSION_COOKIE_SECURE=true
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+# read-only rather than true: ProtectHome=true hides /root outright, and the
+# binary and its .env both live there — the service would fail to start with a
+# "no such file" that points at nothing obvious. The process only ever reads
+# from that directory, so read-only costs nothing.
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

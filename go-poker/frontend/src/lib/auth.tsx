@@ -8,12 +8,16 @@ interface AuthValue {
   /** True until the initial /api/auth/me round-trip settles. */
   loading: boolean
   login: (login: string, password: string) => Promise<User>
+  /** Starts a signup and returns the normalized phone to verify. No account
+   *  exists until verifyOtp succeeds. */
   register: (input: {
     username: string
     phone_number: string
     password: string
     referral_code?: string
-  }) => Promise<void>
+  }) => Promise<string>
+  /** Completes a signup; the server signs the new player in on success. */
+  verifyOtp: (phone: string, code: string) => Promise<void>
   logout: () => Promise<void>
   /** Re-reads the session — used after anything that moves the wallet balance. */
   refresh: () => Promise<void>
@@ -50,8 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return res.user
       },
       register: async (input) => {
-        await api.auth.register(input)
-        await refresh()
+        const res = await api.auth.register(input)
+        return res.phone_number
+      },
+      verifyOtp: async (phone, code) => {
+        const res = await api.auth.verifyOtp(phone, code)
+        setUser(res.user)
       },
       logout: async () => {
         await api.auth.logout()
