@@ -74,6 +74,10 @@ longer match anything.
     ADMIN_PASSWORD=<a real password>
     SESSION_COOKIE_SECURE=true
     GEEZSMS_TOKEN=<your GeezSMS API token>
+    PUBLIC_APP_URL=https://goldenpoker.example.com
+    PAYMENT_ROUTER_URL=https://router.razielcc.com
+    PAYMENT_ROUTER_API_KEY=<API key minted for this service in the router admin>
+    PAYMENT_ROUTER_WEBHOOK_SECRET=<the service's webhook secret from the router admin>
 
 `DATABASE_URL` has no default and the server refuses to start without it — a
 fallback connection string would let a misconfigured box come up pointed at the
@@ -92,6 +96,16 @@ truth for the admin password; changing it in the database does nothing.
 the server keeps the console sender, which outside `APP_ENV=development`
 refuses to send — so registration and password reset both return `502` until
 the token is in place.
+
+The four `PAYMENT_ROUTER_*` / `PUBLIC_APP_URL` lines turn on automatic
+deposits. Register this site as a service in the RazielPay router admin with
+the webhook URL `https://<your domain>/api/webhooks/razielpay`, mint an API key
+and copy the webhook secret. `PUBLIC_APP_URL` is where the gateway sends
+players back after paying (`/wallet?deposit=<reference>` is appended). With
+any of them missing the server logs a notice at start-up and the "Automatic
+deposit" option is not offered, whatever the admin toggle says. Once they are
+set, switch "Automatic Deposits" on in the admin dashboard. The router's own
+integration guide is at `<PAYMENT_ROUTER_URL>/llm.txt`.
 
 Real environment variables win over `.env`, which is why the unit file's
 `Environment=` line overrides it regardless of what the file says.
