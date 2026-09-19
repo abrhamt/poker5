@@ -14,6 +14,7 @@ var (
 	ErrRoomNotFound     = errors.New("room not found")
 	ErrInvalidBlindTier = errors.New("invalid blind tier")
 	ErrInvalidBuyIn     = errors.New("buy-in is outside the allowed range for this tier")
+	ErrPrivateBuyInLow  = errors.New("minimum buy-in must be at least 10 big blinds")
 	ErrInvalidBlinds    = errors.New("small blind must be at least 10")
 	ErrInvalidSeats     = errors.New("seat count must be between 2 and 9")
 )
@@ -39,6 +40,9 @@ const (
 	// Buy-in is bounded as a multiple of the big blind, standard cash-game convention.
 	MinBuyInBBMultiple = 50
 	MaxBuyInBBMultiple = 200
+
+	MinPrivateBuyInBBMultiple     = 10
+	DefaultPrivateBuyInBBMultiple = 50
 )
 
 type RoomService struct {
@@ -65,7 +69,7 @@ func findPublicTier(smallBlind int32) (BlindTier, bool) {
 // CreatePrivateRoom creates a private table with no fixed buy-in: players
 // bring their whole wallet balance to the felt when they join (see
 // GameService.JoinTable), so long as it clears the big blind.
-func (s *RoomService) CreatePrivateRoom(ctx context.Context, hostUserID int64, roomName string, smallBlind int32, maxPlayers int32) (*repository.PokerRoom, error) {
+func (s *RoomService) CreatePrivateRoom(ctx context.Context, hostUserID int64, roomName string, smallBlind int32, maxPlayers int32, minBuyIn int64) (*repository.PokerRoom, error) {
 	if roomName == "" {
 		roomName = "Private Poker Room"
 	}
@@ -84,6 +88,13 @@ func (s *RoomService) CreatePrivateRoom(ctx context.Context, hostUserID int64, r
 		return nil, ErrInvalidSeats
 	}
 
+	if minBuyIn <= 0 {
+		minBuyIn = int64(bigBlind) * DefaultPrivateBuyInBBMultiple
+	}
+	if minBuyIn < int64(bigBlind)*MinPrivateBuyInBBMultiple {
+		return nil, ErrPrivateBuyInLow
+	}
+
 	code, err := utilities.GenerateRoomCode()
 	if err != nil {
 		return nil, err
@@ -94,7 +105,7 @@ func (s *RoomService) CreatePrivateRoom(ctx context.Context, hostUserID int64, r
 		RoomName:   roomName,
 		RoomType:   "private",
 		HostUserID: sql.NullInt64{Int64: hostUserID, Valid: true},
-		BuyIn:      0,
+		BuyIn:      minBuyIn,
 		SmallBlind: smallBlind,
 		BigBlind:   bigBlind,
 		MaxPlayers: maxPlayers,

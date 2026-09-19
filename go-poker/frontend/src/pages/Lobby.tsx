@@ -291,23 +291,30 @@ function CreatePrivateForm({
   onSubmit,
 }: {
   busy: boolean
-  onSubmit: (input: { small_blind: number; max_players: number }) => void
+  onSubmit: (input: { small_blind: number; max_players: number; min_buy_in: number }) => void
 }) {
+  const [smallBlind, setSmallBlind] = useState(10)
+  const [minBuyIn, setMinBuyIn] = useState(10 * 2 * 50)
+  const floor = smallBlind * 2 * 10
+  const buyInOk = Number.isInteger(minBuyIn) && minBuyIn >= floor
+
   return (
     <form
       className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault()
         const form = new FormData(event.currentTarget)
+        if (!buyInOk) return
         onSubmit({
           small_blind: Number(form.get('small_blind')),
           max_players: Number(form.get('max_players')),
+          min_buy_in: minBuyIn,
         })
       }}
     >
       <p className="text-[13px] leading-relaxed text-muted">
         Your own table with a 5-digit code to share. Everyone who joins brings their whole wallet
-        balance, so long as it clears the big blind.
+        balance, and needs at least the minimum buy-in to sit down.
       </p>
 
       <div className="grid grid-cols-2 gap-3">
@@ -321,7 +328,12 @@ function CreatePrivateForm({
             type="number"
             min={10}
             step={5}
-            defaultValue={10}
+            value={smallBlind}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              setSmallBlind(next)
+              setMinBuyIn(next * 2 * 50)
+            }}
             required
             className="field tabular-nums"
           />
@@ -339,7 +351,30 @@ function CreatePrivateForm({
         </div>
       </div>
 
-      <button type="submit" className="btn-gold w-full" disabled={busy}>
+      <div>
+        <label className="label" htmlFor="min_buy_in">
+          Minimum buy-in (ETB)
+        </label>
+        <input
+          id="min_buy_in"
+          name="min_buy_in"
+          type="number"
+          inputMode="numeric"
+          min={floor}
+          step={1}
+          value={minBuyIn}
+          onChange={(e) => setMinBuyIn(Number(e.target.value))}
+          required
+          className="field tabular-nums"
+        />
+        <p className="mt-1 text-[11px] text-muted">
+          {buyInOk
+            ? `Players need at least ${minBuyIn.toLocaleString()} ETB in their wallet to sit down.`
+            : `Must be at least ${floor.toLocaleString()} ETB (10 big blinds).`}
+        </p>
+      </div>
+
+      <button type="submit" className="btn-gold w-full" disabled={busy || !buyInOk}>
         {busy ? 'Creating…' : 'Create table'}
       </button>
     </form>

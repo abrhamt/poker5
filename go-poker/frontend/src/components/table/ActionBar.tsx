@@ -221,7 +221,9 @@ function SitDown({ state, busy, onJoin }: ActionBarProps) {
   return (
     <button type="button" onClick={onJoin} disabled={busy} className="btn-gold px-5 py-3 text-sm">
       {state.room_type === 'private'
-        ? 'Sit Down · Wallet Balance'
+        ? state.buy_in > 0
+          ? `Sit Down · Wallet Balance (min ${state.buy_in.toLocaleString()} ETB)`
+          : 'Sit Down · Wallet Balance'
         : `Sit Down · ${state.buy_in.toLocaleString()} ETB`}
     </button>
   )

@@ -94,7 +94,12 @@ export const api = {
       ),
     quickJoin: (smallBlind: number) =>
       post<{ room_code: string }>('/api/rooms/quick-join', { small_blind: smallBlind }),
-    createPrivate: (input: { room_name?: string; small_blind: number; max_players: number }) =>
+    createPrivate: (input: {
+      room_name?: string
+      small_blind: number
+      max_players: number
+      min_buy_in: number
+    }) =>
       post<{ room_code: string }>('/api/rooms/create-private', input),
     joinByCode: (code: string) => post<{ room_code: string }>('/api/rooms/join-code', { code }),
   },

@@ -190,7 +190,7 @@ func TestGameServiceTwoPlayerHand(t *testing.T) {
 	}
 	u2 = &u2Fresh
 
-	room, err := roomSvc.CreatePrivateRoom(context.Background(), u1.ID, "Test Room", 10, 6)
+	room, err := roomSvc.CreatePrivateRoom(context.Background(), u1.ID, "Test Room", 10, 6, 0)
 	if err != nil {
 		t.Fatalf("create private room: %v", err)
 	}
