@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
     real_deposits_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     deposit_account_name VARCHAR(128) NOT NULL DEFAULT '',
     deposit_account_number VARCHAR(32) NOT NULL DEFAULT '',
+    gateway_deposits_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     -- PostgreSQL has no ON UPDATE CURRENT_TIMESTAMP, so UpdateSiteSettings
     -- sets this column explicitly.
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -188,6 +189,23 @@ CREATE TABLE IF NOT EXISTS bank_deposits (
 );
 CREATE INDEX IF NOT EXISTS idx_bank_deposit_status ON bank_deposits (status);
 CREATE INDEX IF NOT EXISTS idx_bank_deposit_user ON bank_deposits (user_id);
+
+CREATE TABLE IF NOT EXISTS gateway_deposits (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reference VARCHAR(32) NOT NULL UNIQUE,
+    router_payment_id VARCHAR(64) NOT NULL DEFAULT '',
+    amount BIGINT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    checkout_url VARCHAR(1024) NOT NULL DEFAULT '',
+    transaction_id VARCHAR(10) DEFAULT NULL,
+    last_event VARCHAR(32) NOT NULL DEFAULT '',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_gateway_deposit_status ON gateway_deposits (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_gateway_deposit_user ON gateway_deposits (user_id);
 
 -- OTP tables. Their timestamps are BIGINT unix seconds rather than TIMESTAMPTZ
 -- on purpose: these are deadlines compared in Go as often as in SQL, and

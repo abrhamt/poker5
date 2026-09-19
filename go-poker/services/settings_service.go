@@ -54,6 +54,7 @@ type UpdateSettingsRequest struct {
 	RealDepositsEnabled       bool
 	DepositAccountName        string
 	DepositAccountNumber      string
+	GatewayDepositsEnabled    bool
 }
 
 func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest) error {
@@ -91,5 +92,6 @@ func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest)
 		RealDepositsEnabled:       req.RealDepositsEnabled,
 		DepositAccountName:        accountName,
 		DepositAccountNumber:      accountNumber,
+		GatewayDepositsEnabled:    req.GatewayDepositsEnabled,
 	})
 }

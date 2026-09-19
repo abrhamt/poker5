@@ -40,6 +40,21 @@ type GameSession struct {
 	CreatedAt        time.Time
 }
 
+type GatewayDeposit struct {
+	ID              int64
+	UserID          int64
+	Reference       string
+	RouterPaymentID string
+	Amount          int64
+	Status          string
+	CheckoutUrl     string
+	TransactionID   sql.NullString
+	LastEvent       string
+	Note            string
+	CreatedAt       time.Time
+	ResolvedAt      int64
+}
+
 type OtpSendThrottle struct {
 	ID              int64
 	PhoneNumber     string
@@ -155,6 +170,7 @@ type SiteSetting struct {
 	RealDepositsEnabled       bool
 	DepositAccountName        string
 	DepositAccountNumber      string
+	GatewayDepositsEnabled    bool
 	UpdatedAt                 time.Time
 }
 

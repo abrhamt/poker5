@@ -27,6 +27,7 @@ var migrations = []string{
 	`ALTER TABLE bank_deposits ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE bank_deposits ADD COLUMN IF NOT EXISTS last_attempt_at BIGINT NOT NULL DEFAULT 0`,
 	`ALTER TABLE poker_player ADD COLUMN IF NOT EXISTS sitting_out BOOLEAN NOT NULL DEFAULT FALSE`,
+	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS gateway_deposits_enabled BOOLEAN NOT NULL DEFAULT FALSE`,
 }
 
 // Apply creates the schema, runs the migrations, and makes sure the single

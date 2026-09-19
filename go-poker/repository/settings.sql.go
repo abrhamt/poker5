@@ -11,7 +11,7 @@ import (
 
 const getSiteSettings = `-- name: GetSiteSettings :one
 SELECT id, rake_mode, rake_percentage, referral_percentage_pct_mode, referral_percentage_sb_mode, countdown_seconds,
-       real_deposits_enabled, deposit_account_name, deposit_account_number, updated_at
+       real_deposits_enabled, deposit_account_name, deposit_account_number, gateway_deposits_enabled, updated_at
 FROM site_settings
 WHERE id = 1 LIMIT 1
 `
@@ -29,6 +29,7 @@ func (q *Queries) GetSiteSettings(ctx context.Context) (SiteSetting, error) {
 		&i.RealDepositsEnabled,
 		&i.DepositAccountName,
 		&i.DepositAccountNumber,
+		&i.GatewayDepositsEnabled,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -44,6 +45,7 @@ SET rake_mode = $1,
     real_deposits_enabled = $6,
     deposit_account_name = $7,
     deposit_account_number = $8,
+    gateway_deposits_enabled = $9,
     updated_at = NOW()
 WHERE id = 1
 `
@@ -57,6 +59,7 @@ type UpdateSiteSettingsParams struct {
 	RealDepositsEnabled       bool
 	DepositAccountName        string
 	DepositAccountNumber      string
+	GatewayDepositsEnabled    bool
 }
 
 // updated_at is set here rather than by the column: PostgreSQL has no
@@ -71,6 +74,7 @@ func (q *Queries) UpdateSiteSettings(ctx context.Context, arg UpdateSiteSettings
 		arg.RealDepositsEnabled,
 		arg.DepositAccountName,
 		arg.DepositAccountNumber,
+		arg.GatewayDepositsEnabled,
 	)
 	return err
 }
