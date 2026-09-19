@@ -48,6 +48,7 @@ type ServerOption func(*serverConfig)
 type serverConfig struct {
 	otpSender       services.OTPSender
 	receiptVerifier services.ReceiptVerifier
+	paymentRouter   services.PaymentRouter
 }
 
 // WithOTPSender replaces the console sender.
@@ -59,6 +60,10 @@ func WithOTPSender(sender services.OTPSender) ServerOption {
 // be tested without calling a third party.
 func WithReceiptVerifier(verifier services.ReceiptVerifier) ServerOption {
 	return func(cfg *serverConfig) { cfg.receiptVerifier = verifier }
+}
+
+func WithPaymentRouter(router services.PaymentRouter) ServerOption {
+	return func(cfg *serverConfig) { cfg.paymentRouter = router }
 }
 
 func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
@@ -110,6 +115,22 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	// the admin queue only holds what genuinely needs a person.
 	stopSweeper := depositSvc.StartQueueWorker(context.Background(), depositSweepInterval())
 
+	paymentRouter := cfg.paymentRouter
+	if paymentRouter == nil {
+		paymentRouter = services.NewPaymentRouterFromEnv()
+	}
+	gatewaySvc := services.NewGatewayDepositService(q, db, walletSvc, settingsSvc, paymentRouter, os.Getenv("PUBLIC_APP_URL"))
+	if gatewaySvc.Configured() {
+		log.Printf("automatic deposits: payment router configured")
+	} else {
+		log.Printf("automatic deposits: unavailable — set PAYMENT_ROUTER_API_KEY, PAYMENT_ROUTER_WEBHOOK_SECRET and PUBLIC_APP_URL")
+	}
+	stopReconciler := gatewaySvc.StartReconciler(context.Background(), services.GatewayReconcileEvery)
+	stopBackground := func() {
+		stopSweeper()
+		stopReconciler()
+	}
+
 	// Persist live table/player state in the same database as everything else,
 	// so a server restart doesn't strand seated players' chips (their wallet
 	// was already debited on buy-in with nowhere to recover it from if the
@@ -132,14 +153,15 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	}
 
 	authHandler := NewAuthHandler(authSvc, secureCookies)
-	walletHandler := NewWalletHandler(walletSvc, authSvc, depositSvc)
+	walletHandler := NewWalletHandler(walletSvc, authSvc, depositSvc, gatewaySvc)
+	gatewayHandler := NewGatewayDepositHandler(authSvc, gatewaySvc)
 	sseHandler := NewSSEHandler(sseHub)
 	roomHandler := NewRoomHandler(roomSvc, authSvc, gameSvc)
 	gameHandler := NewGameHandler(gameSvc, authSvc, roomSvc)
 	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc, depositSvc)
 
 	s := &FiberServer{
-		stopBackground: stopSweeper,
+		stopBackground: stopBackground,
 
 		App:         app,
 		DB:          db,
@@ -191,6 +213,8 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	wallet.Post("/deposit", walletHandler.Deposit)
 	wallet.Get("/deposit-info", walletHandler.DepositInfo)
 	wallet.Post("/deposit/receipt", walletHandler.SubmitReceipt)
+	wallet.Post("/deposit/gateway", gatewayHandler.Start)
+	wallet.Get("/deposit/gateway/:reference", gatewayHandler.Status)
 	wallet.Get("/transactions", walletHandler.GetTransactions)
 
 	apiAdmin := api.Group("/admin", adminHandler.RequireAdmin)
@@ -203,6 +227,7 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	apiAdmin.Post("/deposits/:id/credit", adminHandler.CreditDeposit)
 
 	api.Get("/events", sseHandler.HandleEvents)
+	api.Post("/webhooks/razielpay", gatewayHandler.RouterCallback)
 
 	// Anything unrouted is a client mistake, not a page: this server is a JSON
 	// API and serves no files. The React app (and, later, the admin app) are

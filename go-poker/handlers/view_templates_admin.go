@@ -14,6 +14,10 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
 	if settings.RealDepositsEnabled {
 		realDepositsOn, realDepositsOff = " selected", ""
 	}
+	gatewayOn, gatewayOff := "", " selected"
+	if settings.GatewayDepositsEnabled {
+		gatewayOn, gatewayOff = " selected", ""
+	}
 
 	percentSelected := ""
 	sbSelected := ""
@@ -98,6 +102,13 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
                         </select>
                     </div>
                     <div class="form-group">
+                        <label for="gateway_deposits_enabled">Automatic Deposits (payment gateway)</label>
+                        <select id="gateway_deposits_enabled" name="gateway_deposits_enabled">
+                            <option value="false"%s>Off</option>
+                            <option value="true"%s>On — players pay online and are credited automatically</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label for="deposit_account_name">Deposit Account Name (must match the CBE receipt exactly)</label>
                         <input type="text" id="deposit_account_name" name="deposit_account_name" maxlength="%d" value="%s">
                     </div>
@@ -162,6 +173,7 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
 		services.MinReferralPercentage, services.MaxReferralPercentage, settings.ReferralPercentageSbMode,
 		services.MinCountdownSeconds, services.MaxCountdownSeconds, settings.CountdownSeconds,
 		realDepositsOff, realDepositsOn,
+		gatewayOff, gatewayOn,
 		services.MaxDepositAccountName, html.EscapeString(settings.DepositAccountName),
 		services.MaxDepositAccountNumber, html.EscapeString(settings.DepositAccountNumber),
 		renderAdminUsersTableHTML(users),

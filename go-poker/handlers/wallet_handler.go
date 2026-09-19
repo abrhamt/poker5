@@ -15,10 +15,11 @@ type WalletHandler struct {
 	wallet  *services.WalletService
 	auth    *services.AuthService
 	deposit *services.DepositService
+	gateway *services.GatewayDepositService
 }
 
-func NewWalletHandler(wallet *services.WalletService, auth *services.AuthService, deposit *services.DepositService) *WalletHandler {
-	return &WalletHandler{wallet: wallet, auth: auth, deposit: deposit}
+func NewWalletHandler(wallet *services.WalletService, auth *services.AuthService, deposit *services.DepositService, gateway *services.GatewayDepositService) *WalletHandler {
+	return &WalletHandler{wallet: wallet, auth: auth, deposit: deposit, gateway: gateway}
 }
 
 func (h *WalletHandler) Deposit(c fiber.Ctx) error {
@@ -56,7 +57,11 @@ func (h *WalletHandler) Deposit(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
 	}
-	if cfg.RealDepositsEnabled {
+	gatewayOn, err := h.gateway.Enabled(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
+	}
+	if cfg.RealDepositsEnabled || gatewayOn {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": services.ErrRealDepositsRequired.Error()})
 	}
 
@@ -126,17 +131,36 @@ func (h *WalletHandler) DepositInfo(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
 	}
-	if !cfg.RealDepositsEnabled {
-		// The account is withheld while the toggle is off so a half-configured
-		// one is never shown as somewhere to send money.
-		return c.JSON(fiber.Map{"real_deposits_enabled": false})
+	gatewayOn, err := h.gateway.Enabled(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
 	}
-	return c.JSON(fiber.Map{
+
+	methods := make([]string, 0, 2)
+	if cfg.RealDepositsEnabled {
+		methods = append(methods, "receipt")
+	}
+	if gatewayOn {
+		methods = append(methods, "gateway")
+	}
+	if len(methods) == 0 {
+		return c.JSON(fiber.Map{"real_deposits_enabled": false, "methods": methods})
+	}
+
+	out := fiber.Map{
 		"real_deposits_enabled": true,
-		"account_name":          cfg.AccountName,
-		"account_number":        cfg.AccountNumber,
-		"min_amount":            services.MinReceiptDeposit,
-	})
+		"methods":               methods,
+	}
+	if cfg.RealDepositsEnabled {
+		out["account_name"] = cfg.AccountName
+		out["account_number"] = cfg.AccountNumber
+		out["min_amount"] = services.MinReceiptDeposit
+	}
+	if gatewayOn {
+		out["gateway_min_amount"] = services.MinGatewayDeposit
+		out["gateway_max_amount"] = services.MaxGatewayDeposit
+	}
+	return c.JSON(out)
 }
 
 // SubmitReceipt takes the pasted CBE SMS. The client extracts the link before

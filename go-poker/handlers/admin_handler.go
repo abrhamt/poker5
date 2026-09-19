@@ -88,6 +88,7 @@ func (h *AdminHandler) UpdateSettings(c fiber.Ctx) error {
 		RealDepositsEnabled       string  `form:"real_deposits_enabled"`
 		DepositAccountName        string  `form:"deposit_account_name"`
 		DepositAccountNumber      string  `form:"deposit_account_number"`
+		GatewayDepositsEnabled    string  `form:"gateway_deposits_enabled"`
 	}
 	_ = c.Bind().Body(&req)
 
@@ -100,6 +101,7 @@ func (h *AdminHandler) UpdateSettings(c fiber.Ctx) error {
 		RealDepositsEnabled:       req.RealDepositsEnabled == "true",
 		DepositAccountName:        req.DepositAccountName,
 		DepositAccountNumber:      req.DepositAccountNumber,
+		GatewayDepositsEnabled:    req.GatewayDepositsEnabled == "true",
 	})
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).SendString(`<div class="error-badge">` + err.Error() + `</div>`)
