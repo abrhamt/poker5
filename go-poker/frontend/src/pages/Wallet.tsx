@@ -2,12 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { extractCbeReceiptUrl } from '../lib/cbeReceipt'
-import type { DepositInfo, TransactionPage } from '../lib/types'
+import type { DepositInfo, DepositMethod, TransactionPage } from '../lib/types'
 import { useAuth } from '../lib/auth'
+import { useGatewayDepositReturn } from '../lib/useGatewayDepositReturn'
 import { useToast } from '../components/Toast'
 import { DrawerLink, SideDrawer } from '../components/SideDrawer'
 import { Sheet } from '../components/Sheet'
 import { TransactionLedger } from '../components/TransactionLedger'
+import {
+  DepositMethodChooser,
+  GatewayDepositForm,
+  GatewayReturnBanner,
+} from '../components/wallet/GatewayDeposit'
 
 const PRESETS = [50, 100, 250, 500, 1000, 2000]
 
@@ -22,6 +28,7 @@ export default function Wallet() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [depositOpen, setDepositOpen] = useState(false)
   const [depositInfo, setDepositInfo] = useState<DepositInfo | null>(null)
+  const [method, setMethod] = useState<DepositMethod | null>(null)
 
   // The ledger measures how many rows fit and asks for exactly that many, so
   // this screen owns the viewport the same way the lobby and table do.
@@ -41,10 +48,15 @@ export default function Wallet() {
   useEffect(() => {
     if (!depositOpen) return
     let cancelled = false
+    setMethod(null)
     api.wallet
       .depositInfo()
       .then((info) => {
-        if (!cancelled) setDepositInfo(info)
+        if (cancelled) return
+        setDepositInfo(info)
+        // One method needs no choice; the chooser only appears when both are on.
+        const methods = availableMethods(info)
+        if (methods.length === 1) setMethod(methods[0])
       })
       .catch(() => {
         // Leave whatever was last known: a failed config read should not
@@ -82,6 +94,44 @@ export default function Wallet() {
     },
     [load],
   )
+
+  const returning = useGatewayDepositReturn((result) => {
+    switch (result.kind) {
+      case 'credited':
+        toast(`Deposited ${result.amount.toLocaleString()} ETB.`, 'success')
+        void Promise.all([refresh(), load(1)])
+        break
+      case 'cancelled':
+        toast('Payment cancelled. Nothing was charged.', 'info')
+        break
+      case 'expired':
+        toast('That payment link expired before it was paid. Start a new deposit to try again.', 'error')
+        break
+      case 'failed':
+        toast('The payment did not go through. Nothing was charged.', 'error')
+        break
+      case 'timeout':
+        toast(
+          'Still confirming your payment. Your balance updates automatically once it goes through.',
+          'info',
+        )
+        void Promise.all([refresh(), load(1)])
+        break
+    }
+  })
+
+  async function startGatewayDeposit(amount: number) {
+    setBusy(true)
+    try {
+      const checkout = await api.wallet.depositGateway(amount)
+      // The browser leaves for the gateway here; the wallet is credited by the
+      // server's callback and confirmed when the player lands back on /wallet.
+      window.location.assign(checkout.checkout_url)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not start the deposit.', 'error')
+      setBusy(false)
+    }
+  }
 
   async function deposit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -150,6 +200,8 @@ export default function Wallet() {
       </header>
 
       <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col gap-2 px-3 pt-2 pb-3">
+        {returning && <GatewayReturnBanner amount={returning.amount} />}
+
         <section className="card flex shrink-0 items-end justify-between gap-3 px-4 py-3">
           <div>
             <span className="text-[10px] tracking-wide text-muted uppercase">Balance</span>
@@ -204,15 +256,33 @@ export default function Wallet() {
         </nav>
       </SideDrawer>
 
-      <Sheet open={depositOpen} title="Deposit ETB" onClose={() => setDepositOpen(false)}>
+      <Sheet open={depositOpen} title={sheetTitle(method)} onClose={() => setDepositOpen(false)}>
         {depositInfo?.real_deposits_enabled ? (
-          <ReceiptDepositForm busy={busy} info={depositInfo} onSubmit={submitReceipt} />
+          method === 'gateway' ? (
+            <GatewayDepositForm busy={busy} info={depositInfo} onSubmit={startGatewayDeposit} />
+          ) : method === 'receipt' ? (
+            <ReceiptDepositForm busy={busy} info={depositInfo} onSubmit={submitReceipt} />
+          ) : (
+            <DepositMethodChooser onPick={setMethod} />
+          )
         ) : (
           <DepositForm busy={busy} onSubmit={deposit} />
         )}
       </Sheet>
     </div>
   )
+}
+
+function availableMethods(info: DepositInfo): DepositMethod[] {
+  if (info.methods && info.methods.length > 0) return info.methods
+  // An older server reports only the receipt toggle.
+  return info.real_deposits_enabled ? ['receipt'] : []
+}
+
+function sheetTitle(method: DepositMethod | null): string {
+  if (method === 'gateway') return 'Automatic deposit'
+  if (method === 'receipt') return 'Deposit by receipt'
+  return 'Deposit ETB'
 }
 
 function DepositForm({

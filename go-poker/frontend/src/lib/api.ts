@@ -2,6 +2,8 @@ import type {
   BlindTier,
   DepositInfo,
   DepositOutcome,
+  GatewayCheckout,
+  GatewayDepositStatus,
   PokerAction,
   PublicRoom,
   TableState,
@@ -123,5 +125,11 @@ export const api = {
      *  and that is the one that decides. */
     depositReceipt: (message: string) =>
       post<DepositOutcome>('/api/wallet/deposit/receipt', { message }),
+    /** Starts an automatic deposit through the payment gateway. The wallet is
+     *  credited only once the gateway confirms, never on return alone. */
+    depositGateway: (amount: number) =>
+      post<GatewayCheckout>('/api/wallet/deposit/gateway', { amount }),
+    gatewayDepositStatus: (reference: string) =>
+      request<GatewayDepositStatus>(`/api/wallet/deposit/gateway/${encodeURIComponent(reference)}`),
   },
 }

@@ -179,11 +179,31 @@ export const emptyTableState = (roomCode: string): TableState => ({
 /** What the deposit screen needs before it can render. The account fields are
  *  only present when real deposits are on — while the toggle is off the server
  *  withholds them rather than advertising a half-configured account. */
+export type DepositMethod = 'receipt' | 'gateway'
+
 export type DepositInfo = {
   real_deposits_enabled: boolean
+  methods?: DepositMethod[]
   account_name?: string
   account_number?: string
   min_amount?: number
+  gateway_min_amount?: number
+  gateway_max_amount?: number
+}
+
+/** A started automatic deposit: the player is sent to `checkout_url` and comes
+ *  back to the wallet with `reference` in the query string. */
+export type GatewayCheckout = {
+  reference: string
+  checkout_url: string
+  amount: number
+}
+
+export type GatewayDepositStatus = {
+  reference: string
+  status: 'pending' | 'credited' | 'failed' | 'cancelled' | 'expired'
+  amount: number
+  transaction_id?: string
 }
 
 /** The result of submitting a receipt. `pending_review` is not a failure: the
