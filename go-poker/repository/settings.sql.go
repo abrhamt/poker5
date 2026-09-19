@@ -10,7 +10,8 @@ import (
 )
 
 const getSiteSettings = `-- name: GetSiteSettings :one
-SELECT id, rake_mode, rake_percentage, referral_percentage_pct_mode, referral_percentage_sb_mode, countdown_seconds, updated_at
+SELECT id, rake_mode, rake_percentage, referral_percentage_pct_mode, referral_percentage_sb_mode, countdown_seconds,
+       real_deposits_enabled, deposit_account_name, deposit_account_number, gateway_deposits_enabled, updated_at
 FROM site_settings
 WHERE id = 1 LIMIT 1
 `
@@ -25,6 +26,10 @@ func (q *Queries) GetSiteSettings(ctx context.Context) (SiteSetting, error) {
 		&i.ReferralPercentagePctMode,
 		&i.ReferralPercentageSbMode,
 		&i.CountdownSeconds,
+		&i.RealDepositsEnabled,
+		&i.DepositAccountName,
+		&i.DepositAccountNumber,
+		&i.GatewayDepositsEnabled,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -32,11 +37,16 @@ func (q *Queries) GetSiteSettings(ctx context.Context) (SiteSetting, error) {
 
 const updateSiteSettings = `-- name: UpdateSiteSettings :exec
 UPDATE site_settings
-SET rake_mode = ?,
-    rake_percentage = ?,
-    referral_percentage_pct_mode = ?,
-    referral_percentage_sb_mode = ?,
-    countdown_seconds = ?
+SET rake_mode = $1,
+    rake_percentage = $2,
+    referral_percentage_pct_mode = $3,
+    referral_percentage_sb_mode = $4,
+    countdown_seconds = $5,
+    real_deposits_enabled = $6,
+    deposit_account_name = $7,
+    deposit_account_number = $8,
+    gateway_deposits_enabled = $9,
+    updated_at = NOW()
 WHERE id = 1
 `
 
@@ -46,8 +56,14 @@ type UpdateSiteSettingsParams struct {
 	ReferralPercentagePctMode float64
 	ReferralPercentageSbMode  float64
 	CountdownSeconds          int32
+	RealDepositsEnabled       bool
+	DepositAccountName        string
+	DepositAccountNumber      string
+	GatewayDepositsEnabled    bool
 }
 
+// updated_at is set here rather than by the column: PostgreSQL has no
+// ON UPDATE CURRENT_TIMESTAMP.
 func (q *Queries) UpdateSiteSettings(ctx context.Context, arg UpdateSiteSettingsParams) error {
 	_, err := q.db.ExecContext(ctx, updateSiteSettings,
 		arg.RakeMode,
@@ -55,6 +71,10 @@ func (q *Queries) UpdateSiteSettings(ctx context.Context, arg UpdateSiteSettings
 		arg.ReferralPercentagePctMode,
 		arg.ReferralPercentageSbMode,
 		arg.CountdownSeconds,
+		arg.RealDepositsEnabled,
+		arg.DepositAccountName,
+		arg.DepositAccountNumber,
+		arg.GatewayDepositsEnabled,
 	)
 	return err
 }

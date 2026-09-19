@@ -1,31 +1,28 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
-
-	_ "github.com/go-sql-driver/mysql"
-	_ "modernc.org/sqlite"
 
 	"github.com/zuse/poker5/go-poker"
 	"github.com/zuse/poker5/go-poker/handlers"
+	"github.com/zuse/poker5/go-poker/repository"
+	"github.com/zuse/poker5/go-poker/utilities"
 )
 
 func main() {
 	mode := flag.String("mode", "demo", "demo or server")
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	dbPath := flag.String("db", "poker.db", "Database path or DSN")
 	flag.Parse()
 
 	switch *mode {
 	case "server":
-		runServer(*addr, *dbPath)
+		runServer(*addr)
 	case "demo":
 		runDemo()
 	default:
@@ -34,18 +31,20 @@ func main() {
 	}
 }
 
-func runServer(addr, dbPath string) {
-	absDB, err := filepath.Abs(dbPath)
+func runServer(addr string) {
+	// .env is read here rather than inside the server: DATABASE_URL has to be
+	// in the environment before the connection is opened, which happens first.
+	_ = utilities.LoadDotEnv(".env")
+
+	db, err := repository.Connect(context.Background())
 	if err != nil {
-		log.Fatalf("abs db path: %v", err)
-	}
-	db, err := sql.Open("sqlite", absDB)
-	if err != nil {
-		log.Fatalf("open db: %v", err)
+		log.Fatalf("database: %v", err)
 	}
 	defer db.Close()
 
 	srv := handlers.NewFiberServer(db)
+	defer srv.Stop()
+
 	if err := srv.Listen(addr); err != nil {
 		log.Fatalf("fiber listen error: %v", err)
 	}
@@ -72,7 +71,7 @@ func runDemo() {
 		steps++
 		if eng.Game.Notifications != nil && len(eng.Game.Notifications) > 0 {
 			last := eng.Game.Notifications[len(eng.Game.Notifications)-1]
-			fmt.Printf("  step %d: %s\n", steps, last)
+			fmt.Printf("  step %d: %s\n", steps, last.Text)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

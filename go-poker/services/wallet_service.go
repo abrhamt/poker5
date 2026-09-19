@@ -59,7 +59,7 @@ func (s *WalletService) EnsureHouseAccount(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 
-	res, err := s.q.CreateUser(ctx, repository.CreateUserParams{
+	id, err := s.q.CreateUser(ctx, repository.CreateUserParams{
 		Username:     houseUsername,
 		PhoneNumber:  "house-system-account",
 		PasswordHash: passHash,
@@ -68,10 +68,6 @@ func (s *WalletService) EnsureHouseAccount(ctx context.Context) (int64, error) {
 		ReferredBy:   sql.NullString{},
 		Role:         "house",
 	})
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
 	}
@@ -113,27 +109,40 @@ func (s *WalletService) CashOut(ctx context.Context, userID int64, amount int64)
 	return s.moveWallet(ctx, userID, amount, TxTypeCashOut, "cash_out")
 }
 
+// DepositWith credits a deposit through the caller's own queries handle, so a
+// bank deposit can move the wallet inside the same database transaction that
+// claims the receipt. Crediting money and recording which receipt paid for it
+// have to commit together or not at all — a wallet credit whose receipt row
+// was rolled back is money with no reference, and the reference is the only
+// thing stopping the same receipt from being spent twice.
+func (s *WalletService) DepositWith(ctx context.Context, q *repository.Queries, userID int64, amount int64, reason string) (*repository.Transaction, error) {
+	if amount <= 0 {
+		return nil, errors.New("invalid deposit amount")
+	}
+	return s.moveWalletWith(ctx, q, userID, amount, TxTypeDeposit, reason)
+}
+
 func (s *WalletService) moveWallet(ctx context.Context, userID int64, delta int64, txType, reason string) (*repository.Transaction, error) {
+	return s.moveWalletWith(ctx, s.q, userID, delta, txType, reason)
+}
+
+func (s *WalletService) moveWalletWith(ctx context.Context, q *repository.Queries, userID int64, delta int64, txType, reason string) (*repository.Transaction, error) {
 	txID, err := utilities.GenerateTxID()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.q.UpdateUserWallet(ctx, repository.UpdateUserWalletParams{Wallet: delta, ID: userID}); err != nil {
+	if err := q.UpdateUserWallet(ctx, repository.UpdateUserWalletParams{Wallet: delta, ID: userID}); err != nil {
 		return nil, err
 	}
 
-	res, err := s.q.CreateTransaction(ctx, repository.CreateTransactionParams{
+	id, err := q.CreateTransaction(ctx, repository.CreateTransactionParams{
 		UserID:        userID,
 		Amount:        delta,
 		Type:          txType,
 		Reason:        reason,
 		TransactionID: txID,
 	})
-	if err != nil {
-		return nil, err
-	}
-	id, err := res.LastInsertId()
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +255,63 @@ func (s *WalletService) ProcessHandPayout(ctx context.Context, winnerUserID int6
 	return result, nil
 }
 
-func (s *WalletService) GetUserTransactions(ctx context.Context, userID int64) ([]repository.Transaction, error) {
-	return s.q.GetTransactionsByUserID(ctx, userID)
+// TransactionPage is one page of a player's ledger together with everything the
+// client needs to draw pagination controls, so listing never costs two calls.
+type TransactionPage struct {
+	Transactions []repository.Transaction
+	Page         int
+	PageSize     int
+	Total        int64
+	TotalPages   int
+}
+
+const (
+	DefaultTransactionsPageSize = 12
+	MaxTransactionsPageSize     = 50
+)
+
+// GetUserTransactions returns the requested page of a player's ledger, newest
+// first. Out-of-range requests are clamped rather than rejected: a page past
+// the end lands on the last real page, which keeps the UI honest if the ledger
+// changed between the client asking and the query running.
+func (s *WalletService) GetUserTransactions(ctx context.Context, userID int64, page, pageSize int) (TransactionPage, error) {
+	if pageSize <= 0 {
+		pageSize = DefaultTransactionsPageSize
+	}
+	if pageSize > MaxTransactionsPageSize {
+		pageSize = MaxTransactionsPageSize
+	}
+	if page < 1 {
+		page = 1
+	}
+
+	total, err := s.q.CountTransactionsByUserID(ctx, userID)
+	if err != nil {
+		return TransactionPage{}, err
+	}
+
+	totalPages := 1
+	if total > 0 {
+		totalPages = int((total + int64(pageSize) - 1) / int64(pageSize))
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+
+	rows, err := s.q.ListTransactionsByUserID(ctx, repository.ListTransactionsByUserIDParams{
+		UserID: userID,
+		Limit:  int32(pageSize),
+		Offset: int32((page - 1) * pageSize),
+	})
+	if err != nil {
+		return TransactionPage{}, err
+	}
+
+	return TransactionPage{
+		Transactions: rows,
+		Page:         page,
+		PageSize:     pageSize,
+		Total:        total,
+		TotalPages:   totalPages,
+	}, nil
 }

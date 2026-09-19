@@ -10,10 +10,11 @@ import (
 type RoomHandler struct {
 	rooms *services.RoomService
 	auth  *services.AuthService
+	game  *services.GameService
 }
 
-func NewRoomHandler(rooms *services.RoomService, auth *services.AuthService) *RoomHandler {
-	return &RoomHandler{rooms: rooms, auth: auth}
+func NewRoomHandler(rooms *services.RoomService, auth *services.AuthService, game *services.GameService) *RoomHandler {
+	return &RoomHandler{rooms: rooms, auth: auth, game: game}
 }
 
 func (h *RoomHandler) CreatePrivate(c fiber.Ctx) error {
@@ -24,16 +25,9 @@ func (h *RoomHandler) CreatePrivate(c fiber.Ctx) error {
 
 	user, err := h.auth.GetUserByToken(c.Context(), token)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			c.Set("HX-Redirect", "/login")
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 	if user.Role == "admin" {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="error-badge">Admin accounts can't play.</div>`)
-		}
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin accounts cannot play"})
 	}
 
@@ -61,15 +55,7 @@ func (h *RoomHandler) CreatePrivate(c fiber.Ctx) error {
 
 	room, err := h.rooms.CreatePrivateRoom(c.Context(), user.ID, req.RoomName, req.SmallBlind, req.MaxPlayers)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="error-badge">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/table/"+room.RoomCode)
-		return c.SendStatus(fiber.StatusOK)
 	}
 
 	return c.JSON(fiber.Map{
@@ -88,10 +74,6 @@ func (h *RoomHandler) QuickJoin(c fiber.Ctx) error {
 
 	user, err := h.auth.GetUserByToken(c.Context(), token)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			c.Set("HX-Redirect", "/login")
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 	if user.Role == "admin" {
@@ -116,11 +98,6 @@ func (h *RoomHandler) QuickJoin(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/table/"+room.RoomCode)
-		return c.SendStatus(fiber.StatusOK)
-	}
-
 	return c.JSON(fiber.Map{
 		"room_code": room.RoomCode,
 		"room_name": room.RoomName,
@@ -142,15 +119,7 @@ func (h *RoomHandler) JoinByCode(c fiber.Ctx) error {
 
 	room, err := h.rooms.GetRoomByCode(c.Context(), req.Code)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="error-badge">Room not found. Check the 5-digit code and try again.</div>`)
-		}
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "room not found"})
-	}
-
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/table/"+room.RoomCode)
-		return c.SendStatus(fiber.StatusOK)
 	}
 
 	return c.JSON(fiber.Map{
@@ -160,6 +129,9 @@ func (h *RoomHandler) JoinByCode(c fiber.Ctx) error {
 	})
 }
 
+// ListPublic backs the lobby: every public room plus the live seat counts and
+// start countdowns the client needs to render it, and the code of the table
+// this player is still seated at (if any) so they can be offered a way back.
 func (h *RoomHandler) ListPublic(c fiber.Ctx) error {
 	rooms, err := h.rooms.ListPublicRooms(c.Context())
 	if err != nil {
@@ -168,15 +140,39 @@ func (h *RoomHandler) ListPublic(c fiber.Ctx) error {
 
 	out := make([]fiber.Map, 0, len(rooms))
 	for _, r := range rooms {
-		out = append(out, fiber.Map{
-			"room_code":   r.RoomCode,
-			"room_name":   r.RoomName,
-			"buy_in":      r.BuyIn,
-			"small_blind": r.SmallBlind,
-			"big_blind":   r.BigBlind,
-			"max_players": r.MaxPlayers,
-		})
+		room := fiber.Map{
+			"room_code":            r.RoomCode,
+			"room_name":            r.RoomName,
+			"buy_in":               r.BuyIn,
+			"small_blind":          r.SmallBlind,
+			"big_blind":            r.BigBlind,
+			"max_players":          r.MaxPlayers,
+			"player_count":         0,
+			"game_started":         false,
+			"countdown_active":     false,
+			"countdown_ends_at_ms": int64(0),
+		}
+		if summary, ok := h.game.GetLiveSummary(r.RoomCode); ok {
+			room["player_count"] = summary.PlayerCount
+			room["game_started"] = summary.GameStarted
+			room["countdown_active"] = summary.CountdownActive
+			room["countdown_ends_at_ms"] = summary.CountdownEndsAtMs
+		}
+		out = append(out, room)
 	}
 
-	return c.JSON(fiber.Map{"rooms": out, "tiers": services.PublicBlindTiers})
+	activeRoomCode := ""
+	token := c.Cookies("poker_session")
+	if token == "" {
+		token = c.Get("Authorization")
+	}
+	if user, err := h.auth.GetUserByToken(c.Context(), token); err == nil {
+		activeRoomCode, _ = h.game.GetSeatedRoomCode(user.ID)
+	}
+
+	return c.JSON(fiber.Map{
+		"rooms":            out,
+		"tiers":            services.PublicBlindTiers,
+		"active_room_code": activeRoomCode,
+	})
 }

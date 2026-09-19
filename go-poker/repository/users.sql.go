@@ -21,9 +21,10 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const createUser = `-- name: CreateUser :execresult
+const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, phone_number, password_hash, wallet, referral_code, referred_by, role)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id
 `
 
 type CreateUserParams struct {
@@ -36,8 +37,8 @@ type CreateUserParams struct {
 	Role         string
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, createUser,
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createUser,
 		arg.Username,
 		arg.PhoneNumber,
 		arg.PasswordHash,
@@ -46,12 +47,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (sql.Res
 		arg.ReferredBy,
 		arg.Role,
 	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
 SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
-WHERE id = ? LIMIT 1
+WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -74,7 +78,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 const getUserByPhone = `-- name: GetUserByPhone :one
 SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
-WHERE phone_number = ? LIMIT 1
+WHERE phone_number = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User, error) {
@@ -97,7 +101,7 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User,
 const getUserByReferralCode = `-- name: GetUserByReferralCode :one
 SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
-WHERE referral_code = ? LIMIT 1
+WHERE referral_code = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByReferralCode(ctx context.Context, referralCode string) (User, error) {
@@ -120,7 +124,7 @@ func (q *Queries) GetUserByReferralCode(ctx context.Context, referralCode string
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
-WHERE username = ? LIMIT 1
+WHERE username = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -145,7 +149,7 @@ SELECT id, username, phone_number, password_hash, wallet, referral_code, referre
 FROM users
 WHERE role != 'house'
 ORDER BY id DESC
-LIMIT ? OFFSET ?
+LIMIT $1 OFFSET $2
 `
 
 type ListUsersParams struct {
@@ -189,9 +193,9 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 const searchUsers = `-- name: SearchUsers :many
 SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
 FROM users
-WHERE role != 'house' AND (username LIKE ? OR phone_number LIKE ?)
+WHERE role != 'house' AND (username ILIKE $1 OR phone_number ILIKE $2)
 ORDER BY id DESC
-LIMIT ? OFFSET ?
+LIMIT $3 OFFSET $4
 `
 
 type SearchUsersParams struct {
@@ -201,6 +205,8 @@ type SearchUsersParams struct {
 	Offset      int32
 }
 
+// ILIKE, not LIKE: PostgreSQL's LIKE is case-sensitive, so an admin searching
+// for "Alice" would miss the user "alice" entirely.
 func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]User, error) {
 	rows, err := q.db.QueryContext(ctx, searchUsers,
 		arg.Username,
@@ -241,8 +247,8 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Use
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec
 UPDATE users
-SET password_hash = ?
-WHERE id = ?
+SET password_hash = $1
+WHERE id = $2
 `
 
 type UpdateUserPasswordParams struct {
@@ -257,8 +263,8 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 
 const updateUserPhone = `-- name: UpdateUserPhone :exec
 UPDATE users
-SET phone_number = ?
-WHERE id = ?
+SET phone_number = $1
+WHERE id = $2
 `
 
 type UpdateUserPhoneParams struct {
@@ -273,8 +279,8 @@ func (q *Queries) UpdateUserPhone(ctx context.Context, arg UpdateUserPhoneParams
 
 const updateUserRole = `-- name: UpdateUserRole :exec
 UPDATE users
-SET role = ?
-WHERE id = ?
+SET role = $1
+WHERE id = $2
 `
 
 type UpdateUserRoleParams struct {
@@ -289,8 +295,8 @@ func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) 
 
 const updateUserWallet = `-- name: UpdateUserWallet :exec
 UPDATE users
-SET wallet = wallet + ?
-WHERE id = ?
+SET wallet = wallet + $1
+WHERE id = $2
 `
 
 type UpdateUserWalletParams struct {

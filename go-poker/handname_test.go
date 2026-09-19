@@ -40,19 +40,17 @@ func TestSolveHandFor(t *testing.T) {
 		t.Errorf("preflop should produce empty hand name, got %q", got)
 	}
 
-	// Flop with two pair (player has KQ, board has KK + something else).
 	eng.Players[1].Cards = [2]string{"Kd", "Qh"}
 	eng.Game.CommunityCards = []string{"Ks", "5c", "2d"}
 	got = eng.SolveHandFor(eng.Players[1])
-	if got != "K's" {
+	if got != "Pair of Kings" {
 		t.Errorf("expected pair of kings, got %q", got)
 	}
 
-	// Flop with two pair (board has AA, player holds KK).
 	eng.Players[1].Cards = [2]string{"Kc", "Kh"}
 	eng.Game.CommunityCards = []string{"Ad", "As", "5c"}
 	got = eng.SolveHandFor(eng.Players[1])
-	if got != "A's & K's" {
+	if got != "Two Pair (Aces & Kings)" {
 		t.Errorf("expected two-pair descr, got %q", got)
 	}
 }

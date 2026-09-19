@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/* The palette is carried over from the htmx build so the React app looks like
+   the same product. Everything is exposed through @theme, which means Tailwind
+   generates real utilities for it: bg-surface, text-gold, border-gold, etc. */
+@theme {
+  --color-ink: #07090e;
+  --color-surface: #0c1017;
+  --color-panel: #101520;
+  --color-panel-hi: #161c2a;
+
+  --color-gold: #d4af37;
+  --color-gold-light: #f3e5ab;
+  --color-gold-bright: #ffd700;
+  --color-gold-dark: #996515;
+
+  --color-felt: #0d4a34;
+  --color-felt-edge: #05261a;
+  --color-felt-rim: #1c130d;
+  --color-felt-wood: #3d2213;
+
+  --color-brand: #2563eb;
+  --color-brand-hi: #1d4ed8;
+  --color-danger: #dc2626;
+  --color-success: #059669;
+
+  --color-chalk: #f8fafc;
+  --color-muted: #8492a6;
+
+  --font-heading: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-gold: 0 0 20px rgb(212 175 55 / 0.2);
+  --shadow-deep: 0 16px 40px rgb(0 0 0 / 0.6);
+
+  --animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
+  --animate-rise: rise 0.28s ease-out;
+  --animate-rotate-hint: rotate-hint 2.2s ease-in-out infinite;
+  --animate-slide-up: slide-up 0.18s ease-out;
+}
+
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(212 175 55 / 0.55); }
+  70%  { box-shadow: 0 0 0 14px rgb(212 175 55 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(212 175 55 / 0); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Nudges the phone illustration on the rotate prompt a quarter turn and back. */
+@keyframes rotate-hint {
+  0%, 40%   { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(-90deg); }
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-ink text-chalk font-body antialiased;
+    background-image:
+      radial-gradient(circle at 50% -10%, rgb(212 175 55 / 0.08) 0%, transparent 60%),
+      radial-gradient(circle at 100% 100%, rgb(13 74 52 / 0.12) 0%, transparent 50%);
+    background-attachment: fixed;
+    letter-spacing: -0.01em;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3 {
+    @apply font-heading;
+  }
+
+  /* Kill the spinner on number inputs — the bet field has its own controls. */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+/* Shared element styles are registered as real utilities (@utility) rather
+   than plain classes, so they compose with variants and can be @apply'd by
+   each other. Anything used once stays as inline utilities on the element. */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+         font-heading text-sm font-semibold tracking-tight
+         transition-all duration-150 cursor-pointer
+         disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50;
+}
+
+@utility btn-gold {
+  @apply btn text-ink
+         bg-linear-[135deg,#f6d365_0%,var(--color-gold)_50%,#aa771c_100%]
+         shadow-[0_4px_14px_rgb(212_175_55/0.25)]
+         hover:not-disabled:brightness-110 hover:not-disabled:-translate-y-px
+         active:not-disabled:translate-y-0;
+}
+
+@utility btn-primary {
+  @apply btn bg-brand text-white hover:not-disabled:bg-brand-hi
+         hover:not-disabled:-translate-y-px active:not-disabled:translate-y-0;
+}
+
+@utility btn-ghost {
+  @apply btn border border-white/10 bg-white/5 text-chalk
+         hover:not-disabled:border-gold/40 hover:not-disabled:bg-white/10;
+}
+
+@utility btn-danger {
+  @apply btn bg-danger/90 text-white hover:not-disabled:bg-danger;
+}
+
+@utility card {
+  @apply rounded-2xl border border-gold/20 bg-panel/75 backdrop-blur-md shadow-deep;
+}
+
+@utility field {
+  @apply w-full rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5
+         text-sm text-chalk placeholder:text-muted/70
+         outline-none transition-colors
+         focus:border-gold/60 focus:ring-2 focus:ring-gold/15;
+}
+
+@utility label {
+  @apply mb-1.5 block text-xs font-semibold tracking-wide text-muted uppercase;
+}
+
+/* The table stage is a fixed-aspect box that every piece of the game sizes
+   itself against with cqw units, so the whole felt scales to any phone without
+   a single media query — and never needs to scroll. */
+@utility table-stage {
+  container-type: inline-size;
+  container-name: stage;
+}
+
+/* Damask-ish backdrop behind the felt, echoing a real card-room table. */
+@utility room-backdrop {
+  background-color: #0a3b28;
+  background-image:
+    radial-gradient(circle at 22% 24%, rgb(255 255 255 / 0.05) 0 6%, transparent 6.5%),
+    radial-gradient(circle at 78% 76%, rgb(255 255 255 / 0.05) 0 6%, transparent 6.5%),
+    radial-gradient(circle at 50% 50%, rgb(0 0 0 / 0.35), rgb(0 0 0 / 0.6)),
+    linear-gradient(160deg, #0f5236, #062018);
+  background-size: 22% 34%, 22% 34%, cover, cover;
+}

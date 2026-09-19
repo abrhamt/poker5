@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	poker "github.com/zuse/poker5/go-poker"
+	dbschema "github.com/zuse/poker5/go-poker/db"
 	"github.com/zuse/poker5/go-poker/repository"
 	"github.com/zuse/poker5/go-poker/services"
 	"github.com/zuse/poker5/go-poker/utilities"
@@ -24,11 +26,72 @@ type FiberServer struct {
 	RoomService *services.RoomService
 	GameService *services.GameService
 	SSE         *services.SSEHub
+
+	// stopBackground ends the deposit queue worker. Tests call it through
+	// Stop; a running server keeps it for the life of the process.
+	stopBackground func()
 }
 
-func NewFiberServer(db *sql.DB) *FiberServer {
-	_ = repository.InitDBSchema(db)
+// Stop ends the server's background work. Listening is unaffected — this is
+// about the goroutines started at construction.
+func (s *FiberServer) Stop() {
+	if s.stopBackground != nil {
+		s.stopBackground()
+	}
+}
+
+// ServerOption customizes construction. It exists mainly so tests can inject a
+// recording OTP sender: the throttle and attempt rules are assertions about how
+// many messages went out, which nothing can observe from the database alone.
+type ServerOption func(*serverConfig)
+
+type serverConfig struct {
+	otpSender       services.OTPSender
+	receiptVerifier services.ReceiptVerifier
+	paymentRouter   services.PaymentRouter
+}
+
+// WithOTPSender replaces the console sender.
+func WithOTPSender(sender services.OTPSender) ServerOption {
+	return func(cfg *serverConfig) { cfg.otpSender = sender }
+}
+
+// WithReceiptVerifier replaces the HTTP receipt verifier, so deposit rules can
+// be tested without calling a third party.
+func WithReceiptVerifier(verifier services.ReceiptVerifier) ServerOption {
+	return func(cfg *serverConfig) { cfg.receiptVerifier = verifier }
+}
+
+func WithPaymentRouter(router services.PaymentRouter) ServerOption {
+	return func(cfg *serverConfig) { cfg.paymentRouter = router }
+}
+
+func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	_ = utilities.LoadDotEnv(".env")
+
+	// A server that cannot create its schema cannot serve a single request, so
+	// this is fatal rather than logged and stepped over: failing at start-up is
+	// the only way the operator finds out before the players do.
+	if err := dbschema.Apply(context.Background(), db); err != nil {
+		log.Fatalf("database schema: %v", err)
+	}
+
+	cfg := &serverConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+	// GEEZSMS_TOKEN is what decides whether codes actually leave the machine.
+	// Its absence falls back to the console sender, which prints in
+	// development and refuses to send anywhere else.
+	otpSender := cfg.otpSender
+	if otpSender == nil {
+		if geez := services.NewGeezSMSSender(); geez != nil {
+			log.Printf("OTP sender: GeezSMS")
+			otpSender = geez
+		} else {
+			otpSender = services.NewConsoleSender()
+		}
+	}
 
 	app := fiber.New(fiber.Config{
 		AppName: "Golden Poker Platform",
@@ -36,37 +99,70 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 
 	q := repository.New(db)
 
-	authSvc := services.NewAuthService(q)
+	authSvc := services.NewAuthService(q, db, otpSender)
 	walletSvc := services.NewWalletService(q)
 	sseHub := services.NewSSEHub()
 	roomSvc := services.NewRoomService(q)
 	settingsSvc := services.NewSettingsService(q)
 	adminSvc := services.NewAdminService(q, walletSvc)
 
-	// Persist live table/player state in the same SQLite database as
-	// everything else, so a server restart doesn't strand seated players'
-	// chips (their wallet was already debited on buy-in with nowhere to
-	// recover it from if the in-memory table simply vanished).
+	verifier := cfg.receiptVerifier
+	if verifier == nil {
+		verifier = services.NewHTTPReceiptVerifier()
+	}
+	depositSvc := services.NewDepositService(q, db, walletSvc, settingsSvc, verifier)
+	// Receipts queued during a verifier outage are re-checked on their own, so
+	// the admin queue only holds what genuinely needs a person.
+	stopSweeper := depositSvc.StartQueueWorker(context.Background(), depositSweepInterval())
+
+	paymentRouter := cfg.paymentRouter
+	if paymentRouter == nil {
+		paymentRouter = services.NewPaymentRouterFromEnv()
+	}
+	gatewaySvc := services.NewGatewayDepositService(q, db, walletSvc, settingsSvc, paymentRouter, os.Getenv("PUBLIC_APP_URL"))
+	if gatewaySvc.Configured() {
+		log.Printf("automatic deposits: payment router configured")
+	} else {
+		log.Printf("automatic deposits: unavailable — set PAYMENT_ROUTER_API_KEY, PAYMENT_ROUTER_WEBHOOK_SECRET and PUBLIC_APP_URL")
+	}
+	stopReconciler := gatewaySvc.StartReconciler(context.Background(), services.GatewayReconcileEvery)
+	stopBackground := func() {
+		stopSweeper()
+		stopReconciler()
+	}
+
+	// Persist live table/player state in the same database as everything else,
+	// so a server restart doesn't strand seated players' chips (their wallet
+	// was already debited on buy-in with nowhere to recover it from if the
+	// in-memory table simply vanished).
 	var gameStorage poker.Storage
-	if sqliteStorage, err := poker.NewSQLiteStorageFromDB(db); err != nil {
+	if pgStorage, err := poker.NewPostgresStorageFromDB(db); err != nil {
 		log.Printf("game storage: falling back to in-memory (state won't survive a restart): %v", err)
 		gameStorage = poker.NewMemoryStorage()
 	} else {
-		gameStorage = sqliteStorage
+		gameStorage = pgStorage
 	}
 	gameSvc := services.NewGameService(walletSvc, sseHub, settingsSvc, gameStorage, roomSvc)
 
 	bootstrap(context.Background(), authSvc, walletSvc)
 
-	authHandler := NewAuthHandler(authSvc)
-	walletHandler := NewWalletHandler(walletSvc, authSvc)
+	secureCookies := secureCookiesEnabled()
+	if !secureCookies {
+		log.Printf("warning: session cookies are being sent WITHOUT the Secure flag — " +
+			"set SESSION_COOKIE_SECURE=true once the site is served over HTTPS")
+	}
+
+	authHandler := NewAuthHandler(authSvc, secureCookies)
+	walletHandler := NewWalletHandler(walletSvc, authSvc, depositSvc, gatewaySvc)
+	gatewayHandler := NewGatewayDepositHandler(authSvc, gatewaySvc)
 	sseHandler := NewSSEHandler(sseHub)
-	roomHandler := NewRoomHandler(roomSvc, authSvc)
+	roomHandler := NewRoomHandler(roomSvc, authSvc, gameSvc)
 	gameHandler := NewGameHandler(gameSvc, authSvc, roomSvc)
-	viewHandler := NewViewHandler(authSvc, walletSvc, roomSvc, gameSvc)
-	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc)
+	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc, depositSvc)
 
 	s := &FiberServer{
+		stopBackground: stopBackground,
+
 		App:         app,
 		DB:          db,
 		Queries:     q,
@@ -81,14 +177,8 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 		return c.JSON(fiber.Map{"status": "ok", "service": "go-poker"})
 	})
 
-	app.Get("/", viewHandler.RenderHome)
-	app.Get("/login", viewHandler.RenderLogin)
-	app.Get("/register", viewHandler.RenderRegister)
-	app.Get("/lobby", viewHandler.RenderLobby)
-	app.Get("/lobby/rooms", viewHandler.RenderLobbyRooms)
-	app.Get("/wallet", viewHandler.RenderWallet)
-	app.Get("/table/:id", viewHandler.RenderTable)
-
+	// Every player-facing page is rendered by the React app in frontend/;
+	// only the admin dashboard is still server-rendered HTML.
 	admin := app.Group("/admin", adminHandler.RequireAdmin)
 	admin.Get("/", adminHandler.RenderDashboard)
 
@@ -96,6 +186,11 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 
 	auth := api.Group("/auth")
 	auth.Post("/register", authHandler.Register)
+	auth.Post("/verify-otp", authHandler.VerifyOTP)
+	auth.Post("/resend-otp", authHandler.ResendOTP)
+	auth.Post("/forgot-password", authHandler.ForgotPassword)
+	auth.Post("/verify-reset-otp", authHandler.VerifyResetOTP)
+	auth.Post("/reset-password", authHandler.ResetPassword)
 	auth.Post("/login", authHandler.Login)
 	auth.Post("/logout", authHandler.Logout)
 	auth.Get("/me", authHandler.Me)
@@ -111,22 +206,34 @@ func NewFiberServer(db *sql.DB) *FiberServer {
 	table.Post("/:id/leave", gameHandler.Leave)
 	table.Post("/:id/act", gameHandler.Act)
 	table.Post("/:id/start", gameHandler.Start)
+	table.Post("/:id/sit-in", gameHandler.SitIn)
 	table.Get("/:id/state", gameHandler.GetState)
 
 	wallet := api.Group("/wallet")
 	wallet.Post("/deposit", walletHandler.Deposit)
+	wallet.Get("/deposit-info", walletHandler.DepositInfo)
+	wallet.Post("/deposit/receipt", walletHandler.SubmitReceipt)
+	wallet.Post("/deposit/gateway", gatewayHandler.Start)
+	wallet.Get("/deposit/gateway/:reference", gatewayHandler.Status)
 	wallet.Get("/transactions", walletHandler.GetTransactions)
 
 	apiAdmin := api.Group("/admin", adminHandler.RequireAdmin)
 	apiAdmin.Post("/settings", adminHandler.UpdateSettings)
 	apiAdmin.Get("/users", adminHandler.SearchUsers)
 	apiAdmin.Get("/transactions", adminHandler.SearchTransactions)
+	apiAdmin.Get("/deposits", adminHandler.ListPendingDeposits)
+	apiAdmin.Post("/deposits/:id/approve", adminHandler.ApproveDeposit)
+	apiAdmin.Post("/deposits/:id/reject", adminHandler.RejectDeposit)
+	apiAdmin.Post("/deposits/:id/credit", adminHandler.CreditDeposit)
 
 	api.Get("/events", sseHandler.HandleEvents)
+	api.Post("/webhooks/razielpay", gatewayHandler.RouterCallback)
 
-	staticDir, _ := filepath.Abs("static")
-	app.Get("/static/*", func(c fiber.Ctx) error {
-		return c.SendFile(filepath.Join(staticDir, c.Params("*")))
+	// Anything unrouted is a client mistake, not a page: this server is a JSON
+	// API and serves no files. The React app (and, later, the admin app) are
+	// static bundles served by the web server in front of it.
+	app.Use(func(c fiber.Ctx) error {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not found"})
 	})
 
 	return s
@@ -149,6 +256,22 @@ func bootstrap(ctx context.Context, authSvc *services.AuthService, walletSvc *se
 	if _, err := authSvc.EnsureAdminUser(ctx, adminUsername, adminPhone, adminPassword); err != nil {
 		log.Printf("warning: failed to ensure admin account: %v", err)
 	}
+}
+
+// depositSweepInterval reads DEPOSIT_SWEEP_INTERVAL, a Go duration such as
+// "90s" or "5m". An unparseable value falls back rather than failing start-up:
+// a typo here should not take the site down.
+func depositSweepInterval() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("DEPOSIT_SWEEP_INTERVAL"))
+	if raw == "" {
+		return services.QueueSweepInterval
+	}
+	interval, err := time.ParseDuration(raw)
+	if err != nil || interval <= 0 {
+		log.Printf("warning: DEPOSIT_SWEEP_INTERVAL=%q is not a valid duration; using %s", raw, services.QueueSweepInterval)
+		return services.QueueSweepInterval
+	}
+	return interval
 }
 
 func envOrDefault(key, fallback string) string {

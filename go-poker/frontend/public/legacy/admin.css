@@ -1208,6 +1208,43 @@ body.poker-app {
     border-radius: var(--radius-full);
 }
 
+.seat-hand-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: var(--radius-full);
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    margin-top: 3px;
+    white-space: nowrap;
+    max-width: 115px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.seat-hand-tag.tag-winner {
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.3), rgba(180, 83, 9, 0.4));
+    border-color: var(--gold-primary);
+    color: var(--gold-light);
+    box-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+    font-weight: 800;
+    animation: pulseWinner 1.6s ease-in-out infinite;
+}
+
+.seat-hand-tag.tag-folded {
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--text-muted);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+@keyframes pulseWinner {
+    0%, 100% { box-shadow: 0 0 8px rgba(212, 175, 55, 0.4); }
+    50% { box-shadow: 0 0 16px rgba(212, 175, 55, 0.8); }
+}
+
 .player-folded {
     opacity: 0.35;
 }
@@ -1473,9 +1510,46 @@ body.poker-app {
 }
 
 .showdown-hand-desc {
-    font-size: 1.05rem;
-    color: var(--text-muted);
-    margin-bottom: 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gold-light);
+    margin-bottom: 8px;
+}
+
+.showdown-cards-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 0 18px;
+    flex-wrap: wrap;
+}
+
+.showdown-card-item {
+    width: 48px;
+    height: 68px;
+    border-radius: 5px;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease;
+}
+
+.showdown-card-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+.showdown-card-item.card-winning {
+    border-radius: 5px;
+    transform: scale(1.05);
+}
+
+.showdown-card-item.card-winning img {
+    box-shadow: 0 0 0 2px var(--gold-primary), 0 0 14px 3px rgba(212, 175, 55, 0.75);
 }
 
 .showdown-countdown {
@@ -1887,4 +1961,59 @@ body.poker-app {
         max-width: 1400px;
         margin: 0 auto;
     }
+}
+
+/* ---------- Deposit review queue ----------
+   The table alongside Site Settings, listing receipts pasted while the bank
+   verifier was unreachable. */
+.info-badge {
+    background: rgba(212, 175, 55, 0.12);
+    border: 1px solid rgba(212, 175, 55, 0.45);
+    color: var(--gold-light, #e8d48a);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 0.88rem;
+    margin-bottom: 16px;
+}
+
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+
+/* Deposit review actions. The two rows are kept apart on purpose: the top row
+   is the safe path (the bank decides), the bottom one credits on the admin's
+   own figure, and they should not read as four equivalent buttons. */
+.deposit-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.deposit-manual {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-subtle);
+}
+
+.deposit-manual input {
+    background: var(--bg-input, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: inherit;
+    padding: 7px 10px;
+    font-size: 0.82rem;
+}
+
+.deposit-manual input[name="amount"] { width: 110px; }
+.deposit-manual input[name="reference"] { width: 160px; }
+
+/* Receipt links are one long unbroken token, so they need an explicit break
+   rule or they force the whole table wider than the card. */
+.break-all {
+    word-break: break-all;
+    max-width: 320px;
 }

@@ -7,13 +7,26 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
-const createTransaction = `-- name: CreateTransaction :execresult
+const countTransactionsByUserID = `-- name: CountTransactionsByUserID :one
+SELECT COUNT(*) AS total
+FROM transactions
+WHERE user_id = $1
+`
+
+func (q *Queries) CountTransactionsByUserID(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTransactionsByUserID, userID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
+const createTransaction = `-- name: CreateTransaction :one
 INSERT INTO transactions (user_id, amount, type, reason, transaction_id)
-VALUES (?, ?, ?, ?, ?)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id
 `
 
 type CreateTransactionParams struct {
@@ -24,31 +37,34 @@ type CreateTransactionParams struct {
 	TransactionID string
 }
 
-func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, createTransaction,
+func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createTransaction,
 		arg.UserID,
 		arg.Amount,
 		arg.Type,
 		arg.Reason,
 		arg.TransactionID,
 	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const filterTransactions = `-- name: FilterTransactions :many
 SELECT t.id, t.user_id, t.amount, t.type, t.reason, t.transaction_id, t.created_at, u.username
 FROM transactions t
 JOIN users u ON u.id = t.user_id
-WHERE u.username LIKE ?
-  AND (? = '' OR t.type = ?)
+WHERE u.username ILIKE $1::text
+  AND ($2::text = '' OR t.type = $2::text)
 ORDER BY t.id DESC
-LIMIT ? OFFSET ?
+LIMIT $4::int OFFSET $3::int
 `
 
 type FilterTransactionsParams struct {
 	Username   string
 	TypeFilter string
-	Limit      int32
-	Offset     int32
+	RowOffset  int32
+	RowLimit   int32
 }
 
 type FilterTransactionsRow struct {
@@ -66,9 +82,8 @@ func (q *Queries) FilterTransactions(ctx context.Context, arg FilterTransactions
 	rows, err := q.db.QueryContext(ctx, filterTransactions,
 		arg.Username,
 		arg.TypeFilter,
-		arg.TypeFilter,
-		arg.Limit,
-		arg.Offset,
+		arg.RowOffset,
+		arg.RowLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -100,15 +115,22 @@ func (q *Queries) FilterTransactions(ctx context.Context, arg FilterTransactions
 	return items, nil
 }
 
-const getTransactionsByUserID = `-- name: GetTransactionsByUserID :many
+const listTransactionsByUserID = `-- name: ListTransactionsByUserID :many
 SELECT id, user_id, amount, type, reason, transaction_id, created_at
 FROM transactions
-WHERE user_id = ?
-ORDER BY id DESC LIMIT 50
+WHERE user_id = $1
+ORDER BY id DESC
+LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) GetTransactionsByUserID(ctx context.Context, userID int64) ([]Transaction, error) {
-	rows, err := q.db.QueryContext(ctx, getTransactionsByUserID, userID)
+type ListTransactionsByUserIDParams struct {
+	UserID int64
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListTransactionsByUserID(ctx context.Context, arg ListTransactionsByUserIDParams) ([]Transaction, error) {
+	rows, err := q.db.QueryContext(ctx, listTransactionsByUserID, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +161,9 @@ func (q *Queries) GetTransactionsByUserID(ctx context.Context, userID int64) ([]
 }
 
 const sumTransactionAmountByTypeSince = `-- name: SumTransactionAmountByTypeSince :one
-SELECT CAST(COALESCE(SUM(amount), 0) AS SIGNED) AS total
+SELECT COALESCE(SUM(amount), 0)::BIGINT AS total
 FROM transactions
-WHERE type = ? AND created_at >= ?
+WHERE type = $1 AND created_at >= $2
 `
 
 type SumTransactionAmountByTypeSinceParams struct {
@@ -149,6 +171,8 @@ type SumTransactionAmountByTypeSinceParams struct {
 	CreatedAt time.Time
 }
 
+// The cast is load-bearing: SUM() over a bigint column is numeric in
+// PostgreSQL, which arrives in Go as a byte slice rather than an integer.
 func (q *Queries) SumTransactionAmountByTypeSince(ctx context.Context, arg SumTransactionAmountByTypeSinceParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, sumTransactionAmountByTypeSince, arg.Type, arg.CreatedAt)
 	var total int64

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bufio"
-	"fmt"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
@@ -27,6 +26,8 @@ func (h *SSEHandler) HandleEvents(c fiber.Ctx) error {
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 
+	ctx := c.Context()
+
 	c.RequestCtx().SetBodyStreamWriter(fasthttp.StreamWriter(func(bw *bufio.Writer) {
 		ch, unsubscribe := h.hub.Subscribe(tableID)
 		defer unsubscribe()
@@ -34,18 +35,20 @@ func (h *SSEHandler) HandleEvents(c fiber.Ctx) error {
 		_, _ = bw.WriteString("event: connected\ndata: {\"status\":\"ok\"}\n\n")
 		_ = bw.Flush()
 
-		for msg := range ch {
-			payload := services.FormatSSEPayload(msg)
-			_, err := bw.WriteString(payload)
-			if err != nil {
-				break
-			}
-			err = bw.Flush()
-			if err != nil {
-				break
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-ch:
+				payload := services.FormatSSEPayload(msg)
+				if _, err := bw.WriteString(payload); err != nil {
+					return
+				}
+				if err := bw.Flush(); err != nil {
+					return
+				}
 			}
 		}
-		fmt.Println("SSE client disconnected for table:", tableID)
 	}))
 
 	return nil

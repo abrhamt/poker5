@@ -20,6 +20,72 @@ func rankIndex(r byte) int {
 	return -1
 }
 
+func rankName(v byte) string {
+	switch v {
+	case '2':
+		return "2"
+	case '3':
+		return "3"
+	case '4':
+		return "4"
+	case '5':
+		return "5"
+	case '6':
+		return "6"
+	case '7':
+		return "7"
+	case '8':
+		return "8"
+	case '9':
+		return "9"
+	case 'T', 't':
+		return "10"
+	case 'J', 'j':
+		return "Jack"
+	case 'Q', 'q':
+		return "Queen"
+	case 'K', 'k':
+		return "King"
+	case 'A', 'a':
+		return "Ace"
+	default:
+		return string(v)
+	}
+}
+
+func rankPlural(v byte) string {
+	switch v {
+	case '2':
+		return "2s"
+	case '3':
+		return "3s"
+	case '4':
+		return "4s"
+	case '5':
+		return "5s"
+	case '6':
+		return "6s"
+	case '7':
+		return "7s"
+	case '8':
+		return "8s"
+	case '9':
+		return "9s"
+	case 'T', 't':
+		return "10s"
+	case 'J', 'j':
+		return "Jacks"
+	case 'Q', 'q':
+		return "Queens"
+	case 'K', 'k':
+		return "Kings"
+	case 'A', 'a':
+		return "Aces"
+	default:
+		return string(v) + "s"
+	}
+}
+
 const (
 	HandHighCard      = "High Card"
 	HandOnePair       = "Pair"
@@ -244,7 +310,18 @@ func (h *Hand) cardsForFlush(suit byte, setRanks bool) []Card {
 func cardCodes(cards []Card) []string {
 	out := make([]string, len(cards))
 	for i, c := range cards {
-		out[i] = c.String()
+		v := c.Value
+		if v == 0 {
+			v = c.WildValue
+		}
+		if v >= 'a' && v <= 'z' {
+			v -= 'a' - 'A'
+		}
+		u := c.Suit
+		if u >= 'a' && u <= 'z' {
+			u -= 'a' - 'A'
+		}
+		out[i] = string([]byte{v, u})
 	}
 	return out
 }

@@ -117,7 +117,7 @@ func (s *AdminService) FilterTransactions(ctx context.Context, username, txType 
 	return s.q.FilterTransactions(ctx, repository.FilterTransactionsParams{
 		Username:   "%" + username + "%",
 		TypeFilter: txType,
-		Limit:      AdminListPageSize,
-		Offset:     int32((page - 1) * AdminListPageSize),
+		RowLimit:   AdminListPageSize,
+		RowOffset:  int32((page - 1) * AdminListPageSize),
 	})
 }

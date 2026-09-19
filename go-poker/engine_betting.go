@@ -4,7 +4,36 @@ import (
 	"fmt"
 )
 
+// dealtIn reports whether a player takes part in the next hand. Sitting-out
+// players keep their seat and their chips but are dealt out entirely — no
+// cards, no blinds, no turn — which is what stops an absent player's stack
+// draining one orbit at a time.
+func (e *GameEngine) dealtIn(p *Player) bool {
+	return p.Chips > 0 && !p.SittingOut
+}
+
+// DealtInCount is how many seated players would actually take part in a hand.
+func (e *GameEngine) DealtInCount() int {
+	return len(e.dealtInPlayers())
+}
+
+func (e *GameEngine) dealtInPlayers() []*Player {
+	out := make([]*Player, 0, len(e.Players))
+	for _, p := range e.Players {
+		if e.dealtIn(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func (e *GameEngine) StartHand() bool {
+	// Seats can outnumber players: with everyone but one sitting out there is
+	// nobody to play against, and the table just waits.
+	if len(e.dealtInPlayers()) < 2 {
+		return false
+	}
+
 	e.Game.GameStarted = true
 	e.Game.TotalHands++
 	e.Game.PhaseIndex = 0
@@ -28,6 +57,9 @@ func (e *GameEngine) StartHand() bool {
 		p.WinProbability = nil
 		p.Cards = [2]string{"1B", "1B"}
 		p.BotLine = NewBotLine()
+		// Dealt out, so every "is this player still in?" check downstream —
+		// turn order, round completion, showdown — skips them for free.
+		p.Folded = p.SittingOut
 	}
 
 	active := []*Player{}
@@ -35,14 +67,14 @@ func (e *GameEngine) StartHand() bool {
 		if p.Chips > 0 {
 			active = append(active, p)
 		} else {
-			e.addNotification(fmt.Sprintf("%s is out of chips!", p.Name))
+			e.addNotification(NoteSystem, fmt.Sprintf("%s is out of chips!", p.Name))
 		}
 	}
 	e.Players = active
 
 	if len(e.Players) < 2 {
 		if len(e.Players) == 1 {
-			e.addNotification(fmt.Sprintf("%s wins the game!", e.Players[0].Name))
+			e.addNotification(NoteResult, fmt.Sprintf("%s wins the game!", e.Players[0].Name))
 			e.Game.GameFinished = true
 		}
 		e.saveState()
@@ -75,25 +107,33 @@ func (e *GameEngine) rotateDealerAndBlinds() {
 		p.IsBigBlind = false
 	}
 
+	// The button and the blinds walk the dealt-in players, never the raw seat
+	// list: posting a blind for someone who is sitting out is exactly the leak
+	// this is here to close.
+	dealt := e.dealtInPlayers()
+	if len(dealt) < 2 {
+		return
+	}
+
 	if e.Game.DealerOrbitCount < 0 {
 		e.Game.DealerOrbitCount = 0
 	} else {
-		e.Game.DealerOrbitCount = (e.Game.DealerOrbitCount + 1) % len(e.Players)
+		e.Game.DealerOrbitCount = (e.Game.DealerOrbitCount + 1) % len(dealt)
 	}
-	dealerIdx := e.Game.DealerOrbitCount
-	e.Players[dealerIdx].IsDealer = true
+	dealerIdx := e.Game.DealerOrbitCount % len(dealt)
+	dealt[dealerIdx].IsDealer = true
 
-	sbIdx := (dealerIdx + 1) % len(e.Players)
-	bbIdx := (dealerIdx + 2) % len(e.Players)
-	if len(e.Players) == 2 {
+	sbIdx := (dealerIdx + 1) % len(dealt)
+	bbIdx := (dealerIdx + 2) % len(dealt)
+	if len(dealt) == 2 {
 		sbIdx = dealerIdx
-		bbIdx = (dealerIdx + 1) % len(e.Players)
+		bbIdx = (dealerIdx + 1) % len(dealt)
 	}
-	e.Players[sbIdx].IsSmallBlind = true
-	e.Players[bbIdx].IsBigBlind = true
+	dealt[sbIdx].IsSmallBlind = true
+	dealt[bbIdx].IsBigBlind = true
 
-	sbAmt := e.placeBet(e.Players[sbIdx], e.Game.SmallBlind)
-	bbAmt := e.placeBet(e.Players[bbIdx], e.Game.BigBlind)
+	sbAmt := e.placeBet(dealt[sbIdx], e.Game.SmallBlind)
+	bbAmt := e.placeBet(dealt[bbIdx], e.Game.BigBlind)
 	e.Game.Pot = sbAmt + bbAmt
 	e.Game.CurrentBet = e.Game.BigBlind
 	e.Game.LastRaise = e.Game.BigBlind
@@ -115,6 +155,9 @@ func (e *GameEngine) placeBet(p *Player, amount int) int {
 
 func (e *GameEngine) dealHoleCards() {
 	for _, p := range e.Players {
+		if p.Folded {
+			continue
+		}
 		if len(e.Game.Deck) >= 2 {
 			p.Cards[0] = e.Game.Deck[0]
 			p.Cards[1] = e.Game.Deck[1]
@@ -145,13 +188,13 @@ func (e *GameEngine) advancePhase() {
 	switch e.Game.Phase {
 	case "flop":
 		e.dealCommunityCards(3)
-		e.addNotification("Flop dealt.")
+		e.addNotification(NotePhase, "Flop dealt.")
 	case "turn":
 		e.dealCommunityCards(1)
-		e.addNotification("Turn dealt.")
+		e.addNotification(NotePhase, "Turn dealt.")
 	case "river":
 		e.dealCommunityCards(1)
-		e.addNotification("River dealt.")
+		e.addNotification(NotePhase, "River dealt.")
 	}
 	e.saveState()
 	e.startBettingRound()
@@ -373,9 +416,9 @@ func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 	switch decision.Action {
 	case "fold":
 		player.Folded = true
-		e.addNotification(fmt.Sprintf("%s folded.", player.Name))
+		e.addNotification(NoteAction, fmt.Sprintf("%s folded.", player.Name))
 	case "check":
-		e.addNotification(fmt.Sprintf("%s checked.", player.Name))
+		e.addNotification(NoteAction, fmt.Sprintf("%s checked.", player.Name))
 	case "call":
 		amt := decision.Amount
 		if amt <= 0 {
@@ -383,7 +426,7 @@ func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 		}
 		bet := e.placeBet(player, amt)
 		e.Game.Pot += bet
-		e.addNotification(fmt.Sprintf("%s called %d.", player.Name, bet))
+		e.addNotification(NoteAction, fmt.Sprintf("%s called %d.", player.Name, bet))
 	case "raise":
 		bet := decision.Amount
 		if bet <= 0 {
@@ -401,7 +444,7 @@ func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 			}
 		}
 		e.Game.Pot += amt
-		e.addNotification(fmt.Sprintf("%s raised to %d.", player.Name, amt))
+		e.addNotification(NoteAction, fmt.Sprintf("%s raised to %d.", player.Name, amt))
 	}
 }
 

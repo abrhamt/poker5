@@ -35,7 +35,30 @@ type Payout struct {
 	Amount   int    `json:"amount"`
 }
 
-const MaxNotifications = 8
+// Notification is one line in the table's action feed.
+//
+// These used to be bare strings. They carry a kind so the client can show the
+// lines players care about (what everyone did, and who won) without the noise
+// of phase announcements, and a sequence number so it can tell which lines are
+// new — the client re-reads whole state on every broadcast, and two identical
+// strings ("dev2 checked.") are otherwise indistinguishable.
+type Notification struct {
+	Seq  int    `json:"seq"`
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+// Notification kinds.
+const (
+	NoteAction = "action" // a player folded, checked, called or raised
+	NoteResult = "result" // a hand was won
+	NotePhase  = "phase"  // the flop, turn or river was dealt
+	NoteSystem = "system" // everything else
+)
+
+// Deep enough that a burst of actions between two client refreshes cannot
+// scroll a line out of the window before anyone sees it.
+const MaxNotifications = 30
 
 const (
 	DefaultSmallBlind = 10
@@ -92,6 +115,11 @@ type Player struct {
 	IsSmallBlind   bool      `json:"small_blind"`
 	IsBigBlind     bool      `json:"big_blind"`
 	Cards          [2]string `json:"cards"`
+	// SittingOut means the player keeps their seat and their chips but is
+	// dealt out: no cards, no blinds, no turn. Set when their clock runs out,
+	// so a dead phone stops bleeding blinds, and cleared only when they say
+	// they are back.
+	SittingOut     bool      `json:"sitting_out"`
 	WinProbability *float64  `json:"win_probability,omitempty"`
 	HandName       string    `json:"hand_name,omitempty"`
 	Stats          Stats     `json:"stats"`
@@ -123,7 +151,7 @@ type Game struct {
 	CreatedAt             time.Time  `json:"created_at,omitempty"`
 	UpdatedAt             time.Time  `json:"updated_at,omitempty"`
 	Version               int        `json:"version"`
-	Notifications         []string   `json:"notifications"`
+	Notifications         []Notification `json:"notifications"`
 	Intermission          bool       `json:"intermission"`
 	LastWinner            *Winner    `json:"last_winner,omitempty"`
 	PotAwards             []PotAward `json:"pot_awards,omitempty"`
@@ -153,7 +181,7 @@ func NewGame(tableID string) *Game {
 		CurrentPlayerIdx: 0,
 		TotalHands:       0,
 		Version:          0,
-		Notifications:    []string{},
+		Notifications:    []Notification{},
 	}
 }
 

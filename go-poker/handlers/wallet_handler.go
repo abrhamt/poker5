@@ -1,19 +1,25 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/zuse/poker5/go-poker/repository"
 	"github.com/zuse/poker5/go-poker/services"
+	"github.com/zuse/poker5/go-poker/utilities"
 )
 
 type WalletHandler struct {
-	wallet *services.WalletService
-	auth   *services.AuthService
+	wallet  *services.WalletService
+	auth    *services.AuthService
+	deposit *services.DepositService
+	gateway *services.GatewayDepositService
 }
 
-func NewWalletHandler(wallet *services.WalletService, auth *services.AuthService) *WalletHandler {
-	return &WalletHandler{wallet: wallet, auth: auth}
+func NewWalletHandler(wallet *services.WalletService, auth *services.AuthService, deposit *services.DepositService, gateway *services.GatewayDepositService) *WalletHandler {
+	return &WalletHandler{wallet: wallet, auth: auth, deposit: deposit, gateway: gateway}
 }
 
 func (h *WalletHandler) Deposit(c fiber.Ctx) error {
@@ -24,10 +30,6 @@ func (h *WalletHandler) Deposit(c fiber.Ctx) error {
 
 	user, err := h.auth.GetUserByToken(c.Context(), token)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			c.Set("HX-Redirect", "/login")
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
@@ -45,23 +47,27 @@ func (h *WalletHandler) Deposit(c fiber.Ctx) error {
 	}
 
 	if body.Amount <= 0 {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">Please enter a valid deposit amount greater than $0.</div>`)
-		}
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid deposit amount"})
+	}
+
+	// With real deposits on, this route is the play-money path and has to be
+	// closed: a client that keeps calling it — an old bundle, or a crafted
+	// request — would otherwise mint balance for free.
+	cfg, err := h.deposit.Config(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
+	}
+	gatewayOn, err := h.gateway.Enabled(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
+	}
+	if cfg.RealDepositsEnabled || gatewayOn {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": services.ErrRealDepositsRequired.Error()})
 	}
 
 	tx, err := h.wallet.Deposit(c.Context(), user.ID, body.Amount)
 	if err != nil {
-		if c.Get("HX-Request") == "true" {
-			return c.SendString(`<div class="toast error">` + err.Error() + `</div>`)
-		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	if c.Get("HX-Request") == "true" {
-		c.Set("HX-Redirect", "/wallet")
-		return c.SendStatus(fiber.StatusOK)
 	}
 
 	return c.JSON(fiber.Map{
@@ -83,13 +89,16 @@ func (h *WalletHandler) GetTransactions(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	txs, err := h.wallet.GetUserTransactions(c.Context(), user.ID)
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("page_size"))
+
+	result, err := h.wallet.GetUserTransactions(c.Context(), user.ID, page, pageSize)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	out := make([]fiber.Map, 0, len(txs))
-	for _, t := range txs {
+	out := make([]fiber.Map, 0, len(result.Transactions))
+	for _, t := range result.Transactions {
 		out = append(out, fiber.Map{
 			"id":             t.ID,
 			"amount":         t.Amount,
@@ -101,7 +110,118 @@ func (h *WalletHandler) GetTransactions(c fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"user_id":      strconv.FormatInt(user.ID, 10),
 		"transactions": out,
+		"page":         result.Page,
+		"page_size":    result.PageSize,
+		"total":        result.Total,
+		"total_pages":  result.TotalPages,
 	})
+}
+
+// DepositInfo tells the client which deposit form to render and, when real
+// deposits are on, the account to send money to. It is the client's only
+// source for that account number — hardcoding it in the bundle would mean a
+// stale build sends players' money to an account we no longer hold.
+func (h *WalletHandler) DepositInfo(c fiber.Ctx) error {
+	if _, err := h.authenticate(c); err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	cfg, err := h.deposit.Config(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
+	}
+	gatewayOn, err := h.gateway.Enabled(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not read deposit settings"})
+	}
+
+	methods := make([]string, 0, 2)
+	if cfg.RealDepositsEnabled {
+		methods = append(methods, "receipt")
+	}
+	if gatewayOn {
+		methods = append(methods, "gateway")
+	}
+	if len(methods) == 0 {
+		return c.JSON(fiber.Map{"real_deposits_enabled": false, "methods": methods})
+	}
+
+	out := fiber.Map{
+		"real_deposits_enabled": true,
+		"methods":               methods,
+	}
+	if cfg.RealDepositsEnabled {
+		out["account_name"] = cfg.AccountName
+		out["account_number"] = cfg.AccountNumber
+		out["min_amount"] = services.MinReceiptDeposit
+	}
+	if gatewayOn {
+		out["gateway_min_amount"] = services.MinGatewayDeposit
+		out["gateway_max_amount"] = services.MaxGatewayDeposit
+	}
+	return c.JSON(out)
+}
+
+// SubmitReceipt takes the pasted CBE SMS. The client extracts the link before
+// posting, but the whole text is accepted and re-parsed here: the client's
+// extraction is there to catch a bad paste early, not to be trusted.
+func (h *WalletHandler) SubmitReceipt(c fiber.Ctx) error {
+	user, err := h.authenticate(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	var body struct {
+		Message string `json:"message" form:"message"`
+		URL     string `json:"url" form:"url"`
+	}
+	_ = c.Bind().Body(&body)
+
+	pasted := body.Message
+	if strings.TrimSpace(pasted) == "" {
+		pasted = body.URL
+	}
+	if strings.TrimSpace(pasted) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": utilities.ErrNoReceiptURL.Error()})
+	}
+
+	outcome, err := h.deposit.SubmitReceipt(c.Context(), user.ID, pasted)
+	if err != nil {
+		return c.Status(depositErrorStatus(err)).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(outcome)
+}
+
+// depositErrorStatus maps a deposit refusal onto the status code that says why
+// it happened: the client shows the message either way, but a 409 on an
+// already-claimed receipt and a 502 on a dead verifier are what make the logs
+// and any future retry logic legible.
+func depositErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, services.ErrReceiptAlreadyClaimed), errors.Is(err, services.ErrReceiptQueued):
+		return fiber.StatusConflict
+	case errors.Is(err, services.ErrRealDepositsDisabled), errors.Is(err, services.ErrDepositAccountUnset):
+		return fiber.StatusForbidden
+	case errors.Is(err, services.ErrVerifierUnavailable):
+		return fiber.StatusBadGateway
+	case errors.Is(err, services.ErrReceiptRejected),
+		errors.Is(err, services.ErrReceiptWrongAccount),
+		errors.Is(err, services.ErrReceiptNotCompleted),
+		errors.Is(err, services.ErrReceiptTooSmall),
+		errors.Is(err, services.ErrReceiptWrongCurrency),
+		errors.Is(err, utilities.ErrNoReceiptURL),
+		errors.Is(err, utilities.ErrReceiptURLTooLong):
+		return fiber.StatusBadRequest
+	default:
+		return fiber.StatusInternalServerError
+	}
+}
+
+func (h *WalletHandler) authenticate(c fiber.Ctx) (*repository.User, error) {
+	token := c.Cookies("poker_session")
+	if token == "" {
+		token = c.Get("Authorization")
+	}
+	return h.auth.GetUserByToken(c.Context(), token)
 }

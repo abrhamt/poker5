@@ -38,7 +38,6 @@ func (h *SSEHub) Subscribe(tableID string) (chan SSEMessage, func()) {
 		defer h.mu.Unlock()
 		if clients, ok := h.rooms[tableID]; ok {
 			delete(clients, ch)
-			close(ch)
 			if len(clients) == 0 {
 				delete(h.rooms, tableID)
 			}

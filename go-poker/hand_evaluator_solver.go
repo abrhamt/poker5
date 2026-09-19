@@ -1,9 +1,5 @@
 package poker
 
-import (
-	"strings"
-)
-
 func _handRankings() map[string]int {
 	return map[string]int{
 		HandRoyalFlush:    9,
@@ -98,8 +94,7 @@ func solveHighCard(h *Hand) {
 		h.Cards = h.Cards[:h.Rules.CardsInHand]
 	}
 	if len(h.Cards) > 0 {
-		suit := h.Cards[0].Suit
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(suit)) + " High"
+		h.Descr = "High Card (" + rankName(h.Cards[0].Value) + " High)"
 	}
 	h.IsPossible = true
 }
@@ -131,11 +126,7 @@ func solveOnePair(h *Hand) {
 		}
 	}
 	if len(h.Cards) >= 2 {
-		suit := byte('?')
-		if len(h.Cards) > 0 {
-			suit = h.Cards[0].Suit
-		}
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(suit)) + "'s"
+		h.Descr = "Pair of " + rankPlural(h.Cards[0].Value)
 	}
 	h.IsPossible = len(h.Cards) >= 2
 }
@@ -155,10 +146,7 @@ func solveTwoPair(h *Hand) {
 		if len(more) > 0 {
 			h.Cards = append(h.Cards, more[0])
 		}
-		topSuit := h.Cards[0].Suit
-		botSuit := h.Cards[2].Suit
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(topSuit)) + "'s & " +
-			strings.TrimSuffix(h.Cards[2].String(), string(botSuit)) + "'s"
+		h.Descr = "Two Pair (" + rankPlural(h.Cards[0].Value) + " & " + rankPlural(h.Cards[2].Value) + ")"
 		h.IsPossible = true
 	} else {
 		h.IsPossible = false
@@ -192,11 +180,7 @@ func solveThreeOfAKind(h *Hand) {
 		}
 	}
 	if len(h.Cards) >= 3 {
-		suit := byte('?')
-		if len(h.Cards) > 0 {
-			suit = h.Cards[0].Suit
-		}
-		h.Descr = strings.TrimSuffix(h.Cards[0].String(), string(suit)) + "'s"
+		h.Descr = "Three of a Kind (" + rankPlural(h.Cards[0].Value) + ")"
 	}
 	h.IsPossible = len(h.Cards) >= 3
 }
