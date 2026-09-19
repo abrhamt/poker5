@@ -17,6 +17,10 @@ const (
 
 	MinCountdownSeconds = 5
 	MaxCountdownSeconds = 120
+
+	MinIntermissionSeconds     = 1
+	MaxIntermissionSeconds     = 30
+	DefaultIntermissionSeconds = 3
 )
 
 var (
@@ -55,6 +59,7 @@ type UpdateSettingsRequest struct {
 	DepositAccountName        string
 	DepositAccountNumber      string
 	GatewayDepositsEnabled    bool
+	IntermissionSeconds       int32
 }
 
 func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest) error {
@@ -71,6 +76,13 @@ func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest)
 		return ErrInvalidSettings
 	}
 	if req.CountdownSeconds < MinCountdownSeconds || req.CountdownSeconds > MaxCountdownSeconds {
+		return ErrInvalidSettings
+	}
+
+	if req.IntermissionSeconds == 0 {
+		req.IntermissionSeconds = DefaultIntermissionSeconds
+	}
+	if req.IntermissionSeconds < MinIntermissionSeconds || req.IntermissionSeconds > MaxIntermissionSeconds {
 		return ErrInvalidSettings
 	}
 
@@ -93,5 +105,6 @@ func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest)
 		DepositAccountName:        accountName,
 		DepositAccountNumber:      accountNumber,
 		GatewayDepositsEnabled:    req.GatewayDepositsEnabled,
+		IntermissionSeconds:       req.IntermissionSeconds,
 	})
 }

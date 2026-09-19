@@ -171,6 +171,7 @@ type SiteSetting struct {
 	DepositAccountName        string
 	DepositAccountNumber      string
 	GatewayDepositsEnabled    bool
+	IntermissionSeconds       int32
 	UpdatedAt                 time.Time
 }
 

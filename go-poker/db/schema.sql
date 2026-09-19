@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
     deposit_account_name VARCHAR(128) NOT NULL DEFAULT '',
     deposit_account_number VARCHAR(32) NOT NULL DEFAULT '',
     gateway_deposits_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    intermission_seconds INTEGER NOT NULL DEFAULT 3,
     -- PostgreSQL has no ON UPDATE CURRENT_TIMESTAMP, so UpdateSiteSettings
     -- sets this column explicitly.
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

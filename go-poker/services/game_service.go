@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -20,13 +21,13 @@ var (
 	ErrPublicNoManualStart = errors.New("public tables start automatically; manual start is not available")
 	ErrHandInProgress      = errors.New("a hand is currently in progress; wait for it to finish before joining")
 	ErrInsufficientFunds   = errors.New("your wallet balance must be greater than the big blind to join this table")
+	ErrBelowMinimumBuyIn   = errors.New("your wallet balance is below this table's minimum buy-in")
 	ErrTableNotFound       = errors.New("table not found")
 )
 
 const (
-	DefaultTurnSeconds  = 25
-	FastStartSeconds    = 2
-	IntermissionSeconds = 10
+	DefaultTurnSeconds = 25
+	FastStartSeconds   = 2
 
 	// How long a sat-out player keeps their seat before their chips are
 	// returned to their wallet and the seat is freed.
@@ -256,6 +257,9 @@ func (s *GameService) JoinTable(ctx context.Context, room *repository.PokerRoom,
 		bigBlind := int64(table.Engine.Game.BigBlind)
 		if user.Wallet <= bigBlind {
 			return ErrInsufficientFunds
+		}
+		if table.BuyIn > 0 && user.Wallet < table.BuyIn {
+			return fmt.Errorf("%w: at least %d ETB is needed", ErrBelowMinimumBuyIn, table.BuyIn)
 		}
 		buyInAmount = user.Wallet
 	}

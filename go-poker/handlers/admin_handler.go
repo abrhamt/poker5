@@ -85,6 +85,7 @@ func (h *AdminHandler) UpdateSettings(c fiber.Ctx) error {
 		ReferralPercentagePctMode float64 `form:"referral_percentage_pct_mode"`
 		ReferralPercentageSbMode  float64 `form:"referral_percentage_sb_mode"`
 		CountdownSeconds          int     `form:"countdown_seconds"`
+		IntermissionSeconds       int     `form:"intermission_seconds"`
 		RealDepositsEnabled       string  `form:"real_deposits_enabled"`
 		DepositAccountName        string  `form:"deposit_account_name"`
 		DepositAccountNumber      string  `form:"deposit_account_number"`
@@ -98,6 +99,7 @@ func (h *AdminHandler) UpdateSettings(c fiber.Ctx) error {
 		ReferralPercentagePctMode: req.ReferralPercentagePctMode,
 		ReferralPercentageSbMode:  req.ReferralPercentageSbMode,
 		CountdownSeconds:          int32(req.CountdownSeconds),
+		IntermissionSeconds:       int32(req.IntermissionSeconds),
 		RealDepositsEnabled:       req.RealDepositsEnabled == "true",
 		DepositAccountName:        req.DepositAccountName,
 		DepositAccountNumber:      req.DepositAccountNumber,

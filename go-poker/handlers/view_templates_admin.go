@@ -95,6 +95,10 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
                         <input type="number" id="countdown_seconds" name="countdown_seconds" min="%d" max="%d" value="%d">
                     </div>
                     <div class="form-group">
+                        <label for="intermission_seconds">Pause Between Hands (seconds)</label>
+                        <input type="number" id="intermission_seconds" name="intermission_seconds" min="%d" max="%d" value="%d">
+                    </div>
+                    <div class="form-group">
                         <label for="real_deposits_enabled">Deposits</label>
                         <select id="real_deposits_enabled" name="real_deposits_enabled">
                             <option value="false"%s>Play money — any amount, credited instantly</option>
@@ -172,6 +176,7 @@ func renderAdminDashboardHTML(earnings services.EarningsSummary, settings reposi
 		services.MinReferralPercentage, services.MaxReferralPercentage, settings.ReferralPercentagePctMode,
 		services.MinReferralPercentage, services.MaxReferralPercentage, settings.ReferralPercentageSbMode,
 		services.MinCountdownSeconds, services.MaxCountdownSeconds, settings.CountdownSeconds,
+		services.MinIntermissionSeconds, services.MaxIntermissionSeconds, settings.IntermissionSeconds,
 		realDepositsOff, realDepositsOn,
 		gatewayOff, gatewayOn,
 		services.MaxDepositAccountName, html.EscapeString(settings.DepositAccountName),

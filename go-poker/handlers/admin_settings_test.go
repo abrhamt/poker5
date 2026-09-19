@@ -24,7 +24,7 @@ func TestAdminSettingsWithoutHtmx(t *testing.T) {
 	resp, _ := srv.App.Test(req)
 	cookie := strings.Split(resp.Header.Get("Set-Cookie"), ";")[0]
 
-	form := "rake_mode=small_blind&rake_percentage=7.5&referral_percentage_pct_mode=12&referral_percentage_sb_mode=13&countdown_seconds=30&real_deposits_enabled=false&deposit_account_name=&deposit_account_number="
+	form := "rake_mode=small_blind&rake_percentage=7.5&referral_percentage_pct_mode=12&referral_percentage_sb_mode=13&countdown_seconds=30&intermission_seconds=4&real_deposits_enabled=false&deposit_account_name=&deposit_account_number="
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/settings", strings.NewReader(form))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Cookie", cookie)
@@ -44,7 +44,7 @@ func TestAdminSettingsWithoutHtmx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read settings: %v", err)
 	}
-	if got.RakeMode != "small_blind" || got.RakePercentage != 7.5 || got.CountdownSeconds != 30 {
+	if got.RakeMode != "small_blind" || got.RakePercentage != 7.5 || got.CountdownSeconds != 30 || got.IntermissionSeconds != 4 {
 		t.Fatalf("settings did not persist without htmx: %+v", got)
 	}
 }

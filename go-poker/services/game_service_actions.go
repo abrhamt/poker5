@@ -19,13 +19,26 @@ func unixMilliOrZero(t time.Time) int64 {
 	return t.UnixMilli()
 }
 
+func (s *GameService) intermissionDuration() time.Duration {
+	seconds := int32(DefaultIntermissionSeconds)
+	if s.settings != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if settings, err := s.settings.Get(ctx); err == nil && settings.IntermissionSeconds > 0 {
+			seconds = settings.IntermissionSeconds
+		}
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func (s *GameService) startIntermissionTimer(table *ActiveTable) {
 	if table.IntermissionTimer != nil {
 		table.IntermissionTimer.Stop()
 	}
-	table.IntermissionEndsAt = time.Now().Add(IntermissionSeconds * time.Second)
+	pause := s.intermissionDuration()
+	table.IntermissionEndsAt = time.Now().Add(pause)
 	roomCode := table.RoomCode
-	table.IntermissionTimer = time.AfterFunc(IntermissionSeconds*time.Second, func() {
+	table.IntermissionTimer = time.AfterFunc(pause, func() {
 		s.fireNextHand(roomCode)
 	})
 }
