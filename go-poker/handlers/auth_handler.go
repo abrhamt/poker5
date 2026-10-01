@@ -185,6 +185,7 @@ func userPayload(user *repository.User) fiber.Map {
 		"phone_number":  user.PhoneNumber,
 		"wallet":        user.Wallet,
 		"referral_code": user.ReferralCode,
+		"role":          user.Role,
 	}
 }
 
@@ -211,13 +212,9 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "login successful",
 		"token":   token,
-		"user": fiber.Map{
-			"id":            user.ID,
-			"username":      user.Username,
-			"phone_number":  user.PhoneNumber,
-			"wallet":        user.Wallet,
-			"referral_code": user.ReferralCode,
-		},
+		// role decides where the client sends the user next; without it an
+		// admin signing in lands in the lobby until the next page load.
+		"user": userPayload(user),
 	})
 }
 

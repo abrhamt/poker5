@@ -84,40 +84,74 @@ func (s *AdminService) GetEarnings(ctx context.Context) (EarningsSummary, error)
 	return summary, nil
 }
 
-func (s *AdminService) ListUsers(ctx context.Context, page int) ([]repository.User, error) {
+// SearchUsers pages through accounts whose username or phone contains query;
+// an empty query lists everyone. The total is for the pager.
+func (s *AdminService) SearchUsers(ctx context.Context, query string, page int) ([]repository.User, int64, error) {
 	if page < 1 {
 		page = 1
 	}
-	return s.q.ListUsers(ctx, repository.ListUsersParams{
-		Limit:  AdminListPageSize,
-		Offset: int32((page - 1) * AdminListPageSize),
-	})
-}
+	offset := int32((page - 1) * AdminListPageSize)
+	if query == "" {
+		total, err := s.q.CountUsers(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		users, err := s.q.ListUsers(ctx, repository.ListUsersParams{Limit: AdminListPageSize, Offset: offset})
+		return users, total, err
+	}
 
-func (s *AdminService) SearchUsers(ctx context.Context, query string, page int) ([]repository.User, error) {
-	if page < 1 {
-		page = 1
-	}
 	like := "%" + query + "%"
-	return s.q.SearchUsers(ctx, repository.SearchUsersParams{
+	total, err := s.q.CountSearchUsers(ctx, repository.CountSearchUsersParams{Username: like, PhoneNumber: like})
+	if err != nil {
+		return nil, 0, err
+	}
+	users, err := s.q.SearchUsers(ctx, repository.SearchUsersParams{
 		Username:    like,
 		PhoneNumber: like,
 		Limit:       AdminListPageSize,
-		Offset:      int32((page - 1) * AdminListPageSize),
+		Offset:      offset,
 	})
+	return users, total, err
+}
+
+// UserDetail is everything the admin's player page shows at once.
+type UserDetail struct {
+	User         repository.User
+	Transactions []repository.Transaction
+}
+
+func (s *AdminService) GetUser(ctx context.Context, userID int64) (UserDetail, error) {
+	user, err := s.q.GetUserByID(ctx, userID)
+	if err != nil {
+		return UserDetail{}, err
+	}
+	txs, err := s.q.ListTransactionsByUserID(ctx, repository.ListTransactionsByUserIDParams{
+		UserID: userID,
+		Limit:  AdminListPageSize,
+	})
+	if err != nil {
+		return UserDetail{}, err
+	}
+	return UserDetail{User: user, Transactions: txs}, nil
 }
 
 // FilterTransactions lists recent transactions, optionally narrowed by a
 // username substring and/or an exact transaction type. Empty strings mean
 // "no filter" on that dimension.
-func (s *AdminService) FilterTransactions(ctx context.Context, username, txType string, page int) ([]repository.FilterTransactionsRow, error) {
+func (s *AdminService) FilterTransactions(ctx context.Context, username, txType string, page int) ([]repository.FilterTransactionsRow, int64, error) {
 	if page < 1 {
 		page = 1
 	}
-	return s.q.FilterTransactions(ctx, repository.FilterTransactionsParams{
-		Username:   "%" + username + "%",
+	like := "%" + username + "%"
+	total, err := s.q.CountFilterTransactions(ctx, repository.CountFilterTransactionsParams{Username: like, TypeFilter: txType})
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.q.FilterTransactions(ctx, repository.FilterTransactionsParams{
+		Username:   like,
 		TypeFilter: txType,
 		RowLimit:   AdminListPageSize,
 		RowOffset:  int32((page - 1) * AdminListPageSize),
 	})
+	return rows, total, err
 }

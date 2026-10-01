@@ -28,6 +28,14 @@ UPDATE users
 SET wallet = wallet + $1
 WHERE id = $2;
 
+-- name: DebitUserWalletIfSufficient :execrows
+-- The balance check and the debit are one statement, so two debits racing each
+-- other cannot both pass a check that only one of them can afford. Zero rows
+-- affected means the balance was short.
+UPDATE users
+SET wallet = wallet - sqlc.arg(amount)
+WHERE id = sqlc.arg(id) AND wallet >= sqlc.arg(amount);
+
 -- name: UpdateUserRole :exec
 UPDATE users
 SET role = $1
@@ -61,3 +69,15 @@ LIMIT $3 OFFSET $4;
 
 -- name: CountUsers :one
 SELECT COUNT(*) FROM users WHERE role != 'house';
+
+-- name: CountSearchUsers :one
+SELECT COUNT(*) FROM users
+WHERE role != 'house' AND (username ILIKE $1 OR phone_number ILIKE $2);
+
+-- name: RecordPasswordReset :exec
+INSERT INTO password_resets (user_id, reset_at)
+VALUES ($1, $2)
+ON CONFLICT (user_id) DO UPDATE SET reset_at = EXCLUDED.reset_at;
+
+-- name: GetPasswordResetAt :one
+SELECT reset_at FROM password_resets WHERE user_id = $1;

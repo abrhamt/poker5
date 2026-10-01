@@ -64,6 +64,11 @@ type OtpSendThrottle struct {
 	SendCount       int32
 }
 
+type PasswordReset struct {
+	UserID  int64
+	ResetAt int64
+}
+
 type PasswordResetCode struct {
 	ID             int64
 	UserID         int64
@@ -161,18 +166,22 @@ type PokerRoom struct {
 }
 
 type SiteSetting struct {
-	ID                        int32
-	RakeMode                  string
-	RakePercentage            float64
-	ReferralPercentagePctMode float64
-	ReferralPercentageSbMode  float64
-	CountdownSeconds          int32
-	RealDepositsEnabled       bool
-	DepositAccountName        string
-	DepositAccountNumber      string
-	GatewayDepositsEnabled    bool
-	IntermissionSeconds       int32
-	UpdatedAt                 time.Time
+	ID                           int32
+	RakeMode                     string
+	RakePercentage               float64
+	ReferralPercentagePctMode    float64
+	ReferralPercentageSbMode     float64
+	CountdownSeconds             int32
+	RealDepositsEnabled          bool
+	DepositAccountName           string
+	DepositAccountNumber         string
+	GatewayDepositsEnabled       bool
+	IntermissionSeconds          int32
+	WithdrawalsEnabled           bool
+	WithdrawalMinAmount          int64
+	WithdrawalCancelEnabled      bool
+	WithdrawalResetCooldownHours int32
+	UpdatedAt                    time.Time
 }
 
 type Transaction struct {
@@ -202,4 +211,21 @@ type UserSession struct {
 	UserID       int64
 	ExpiresAt    time.Time
 	CreatedAt    time.Time
+}
+
+type Withdrawal struct {
+	ID                  int64
+	UserID              int64
+	Method              string
+	AccountNumber       string
+	AccountName         string
+	Amount              int64
+	Status              string
+	Note                string
+	PayoutReference     string
+	ResolvedBy          string
+	DebitTransactionID  string
+	RefundTransactionID sql.NullString
+	CreatedAt           time.Time
+	ResolvedAt          int64
 }

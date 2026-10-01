@@ -390,6 +390,11 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	if err := qtx.DeleteSessionTokensByUser(ctx, row.UserID); err != nil {
 		return nil, "", err
 	}
+	// Remembered for the withdrawal cooldown: whoever just reset this password
+	// may be the person it was stolen from, or the person who stole it.
+	if err := qtx.RecordPasswordReset(ctx, repository.RecordPasswordResetParams{UserID: row.UserID, ResetAt: time.Now().Unix()}); err != nil {
+		return nil, "", err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, "", err
 	}

@@ -10,6 +10,26 @@ import (
 	"time"
 )
 
+const countFilterTransactions = `-- name: CountFilterTransactions :one
+SELECT COUNT(*)
+FROM transactions t
+JOIN users u ON u.id = t.user_id
+WHERE u.username ILIKE $1::text
+  AND ($2::text = '' OR t.type = $2::text)
+`
+
+type CountFilterTransactionsParams struct {
+	Username   string
+	TypeFilter string
+}
+
+func (q *Queries) CountFilterTransactions(ctx context.Context, arg CountFilterTransactionsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countFilterTransactions, arg.Username, arg.TypeFilter)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countTransactionsByUserID = `-- name: CountTransactionsByUserID :one
 SELECT COUNT(*) AS total
 FROM transactions

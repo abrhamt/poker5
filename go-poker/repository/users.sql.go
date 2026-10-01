@@ -10,6 +10,23 @@ import (
 	"database/sql"
 )
 
+const countSearchUsers = `-- name: CountSearchUsers :one
+SELECT COUNT(*) FROM users
+WHERE role != 'house' AND (username ILIKE $1 OR phone_number ILIKE $2)
+`
+
+type CountSearchUsersParams struct {
+	Username    string
+	PhoneNumber string
+}
+
+func (q *Queries) CountSearchUsers(ctx context.Context, arg CountSearchUsersParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSearchUsers, arg.Username, arg.PhoneNumber)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users WHERE role != 'house'
 `
@@ -50,6 +67,39 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int64, 
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const debitUserWalletIfSufficient = `-- name: DebitUserWalletIfSufficient :execrows
+UPDATE users
+SET wallet = wallet - $1
+WHERE id = $2 AND wallet >= $1
+`
+
+type DebitUserWalletIfSufficientParams struct {
+	Amount int64
+	ID     int64
+}
+
+// The balance check and the debit are one statement, so two debits racing each
+// other cannot both pass a check that only one of them can afford. Zero rows
+// affected means the balance was short.
+func (q *Queries) DebitUserWalletIfSufficient(ctx context.Context, arg DebitUserWalletIfSufficientParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, debitUserWalletIfSufficient, arg.Amount, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const getPasswordResetAt = `-- name: GetPasswordResetAt :one
+SELECT reset_at FROM password_resets WHERE user_id = $1
+`
+
+func (q *Queries) GetPasswordResetAt(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getPasswordResetAt, userID)
+	var reset_at int64
+	err := row.Scan(&reset_at)
+	return reset_at, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
@@ -188,6 +238,22 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordPasswordReset = `-- name: RecordPasswordReset :exec
+INSERT INTO password_resets (user_id, reset_at)
+VALUES ($1, $2)
+ON CONFLICT (user_id) DO UPDATE SET reset_at = EXCLUDED.reset_at
+`
+
+type RecordPasswordResetParams struct {
+	UserID  int64
+	ResetAt int64
+}
+
+func (q *Queries) RecordPasswordReset(ctx context.Context, arg RecordPasswordResetParams) error {
+	_, err := q.db.ExecContext(ctx, recordPasswordReset, arg.UserID, arg.ResetAt)
+	return err
 }
 
 const searchUsers = `-- name: SearchUsers :many

@@ -24,6 +24,13 @@ WHERE u.username ILIKE sqlc.arg(username)::text
 ORDER BY t.id DESC
 LIMIT sqlc.arg(row_limit)::int OFFSET sqlc.arg(row_offset)::int;
 
+-- name: CountFilterTransactions :one
+SELECT COUNT(*)
+FROM transactions t
+JOIN users u ON u.id = t.user_id
+WHERE u.username ILIKE sqlc.arg(username)::text
+  AND (sqlc.arg(type_filter)::text = '' OR t.type = sqlc.arg(type_filter)::text);
+
 -- name: SumTransactionAmountByTypeSince :one
 -- The cast is load-bearing: SUM() over a bigint column is numeric in
 -- PostgreSQL, which arrives in Go as a byte slice rather than an integer.
