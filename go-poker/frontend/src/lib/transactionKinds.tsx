@@ -51,6 +51,27 @@ const KINDS: Record<string, TransactionKind> = {
       </>,
     ),
   },
+  withdrawal: {
+    label: 'Withdrawal',
+    tone: 'bg-orange-500/12 text-orange-300',
+    icon: icon(
+      <>
+        <rect x="2" y="6" width="20" height="12" rx="2" />
+        <line x1="12" y1="15" x2="12" y2="9" />
+        <polyline points="9 12 12 9 15 12" />
+      </>,
+    ),
+  },
+  withdrawal_refund: {
+    label: 'Withdrawal returned',
+    tone: 'bg-emerald-500/12 text-emerald-300',
+    icon: icon(
+      <>
+        <polyline points="1 4 1 10 7 10" />
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+      </>,
+    ),
+  },
   winner_payout: {
     label: 'Hand winnings',
     tone: 'bg-gold/15 text-gold-light',

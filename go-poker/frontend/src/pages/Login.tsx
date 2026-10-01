@@ -15,9 +15,8 @@ export default function Login() {
     setError('')
     setBusy(true)
     try {
-      await login(String(form.get('login')), String(form.get('password')))
-      // RequireAuth forwards admin accounts on to the Go-rendered dashboard.
-      navigate('/lobby', { replace: true })
+      const user = await login(String(form.get('login')), String(form.get('password')))
+      navigate(user.role === 'admin' ? '/admin' : '/lobby', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed.')
     } finally {

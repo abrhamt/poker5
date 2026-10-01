@@ -9,6 +9,9 @@ import type {
   TableState,
   TransactionPage,
   User,
+  Withdrawal,
+  WithdrawalMethod,
+  WithdrawInfo,
 } from './types'
 
 /** Thrown for any non-2xx response, carrying the server's `error` message so
@@ -23,7 +26,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, {
@@ -54,7 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-const post = <T,>(path: string, payload?: unknown) =>
+export const post = <T,>(path: string, payload?: unknown) =>
   request<T>(path, {
     method: 'POST',
     body: payload === undefined ? undefined : JSON.stringify(payload),
@@ -136,5 +139,16 @@ export const api = {
       post<GatewayCheckout>('/api/wallet/deposit/gateway', { amount }),
     gatewayDepositStatus: (reference: string) =>
       request<GatewayDepositStatus>(`/api/wallet/deposit/gateway/${encodeURIComponent(reference)}`),
+    /** Whether withdrawals are open, the rules in force, and recent requests. */
+    withdrawInfo: () => request<WithdrawInfo>('/api/wallet/withdraw-info'),
+    /** Takes the amount out of the wallet immediately and files the request. */
+    withdraw: (input: {
+      method: WithdrawalMethod
+      account_number: string
+      account_name: string
+      amount: number
+    }) => post<{ withdrawal: Withdrawal }>('/api/wallet/withdraw', input),
+    cancelWithdrawal: (id: number) =>
+      post<{ withdrawal: Withdrawal }>(`/api/wallet/withdrawals/${id}/cancel`),
   },
 }

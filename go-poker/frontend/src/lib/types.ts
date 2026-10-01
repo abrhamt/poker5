@@ -216,3 +216,33 @@ export type DepositOutcome = {
   transaction_id?: string
   message: string
 }
+
+export type WithdrawalMethod = 'cbe' | 'telebirr'
+export type WithdrawalStatus = 'pending' | 'completed' | 'rejected' | 'cancelled'
+
+/** A payout request. The amount left the wallet when it was made; a rejected
+ *  or cancelled request has been paid back. */
+export interface Withdrawal {
+  id: number
+  method: WithdrawalMethod
+  account_number: string
+  account_name: string
+  amount: number
+  status: WithdrawalStatus
+  /** The rejection reason the player is shown. */
+  note: string
+  payout_reference: string
+  created_at: string
+  resolved_at: string | null
+}
+
+export interface WithdrawInfo {
+  enabled: boolean
+  min_amount: number
+  cancel_enabled: boolean
+  methods: WithdrawalMethod[]
+  /** Set while the account is inside the post-password-reset pause. */
+  cooldown_until: string | null
+  /** Most recent first. At most one is pending. */
+  withdrawals: Withdrawal[]
+}
