@@ -181,6 +181,7 @@ type SiteSetting struct {
 	WithdrawalMinAmount          int64
 	WithdrawalCancelEnabled      bool
 	WithdrawalResetCooldownHours int32
+	PublicRefillEnabled          bool
 	UpdatedAt                    time.Time
 }
 

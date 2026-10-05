@@ -70,6 +70,43 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 	return id, err
 }
 
+const debitWalletWithTransaction = `-- name: DebitWalletWithTransaction :one
+WITH debited AS (
+    UPDATE users
+    SET wallet = wallet - $1::bigint
+    WHERE users.id = $5::bigint AND users.wallet >= $1::bigint
+    RETURNING users.id AS debited_user_id
+)
+INSERT INTO transactions (user_id, amount, type, reason, transaction_id)
+SELECT debited.debited_user_id, -$1::bigint, $2, $3, $4
+FROM debited
+RETURNING transactions.id
+`
+
+type DebitWalletWithTransactionParams struct {
+	Amount        int64
+	Type          string
+	Reason        string
+	TransactionID string
+	UserID        int64
+}
+
+// Takes money out of a wallet and records why, as one statement: the balance
+// check, the debit and the ledger row cannot be split by a concurrent debit or
+// a failure between them. No row back means the balance was short.
+func (q *Queries) DebitWalletWithTransaction(ctx context.Context, arg DebitWalletWithTransactionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, debitWalletWithTransaction,
+		arg.Amount,
+		arg.Type,
+		arg.Reason,
+		arg.TransactionID,
+		arg.UserID,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const filterTransactions = `-- name: FilterTransactions :many
 SELECT t.id, t.user_id, t.amount, t.type, t.reason, t.transaction_id, t.created_at, u.username
 FROM transactions t

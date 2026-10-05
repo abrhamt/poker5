@@ -58,13 +58,17 @@ func (e *GameEngine) StartHand() bool {
 		p.Cards = [2]string{"1B", "1B"}
 		p.BotLine = NewBotLine()
 		// Dealt out, so every "is this player still in?" check downstream —
-		// turn order, round completion, showdown — skips them for free.
-		p.Folded = p.SittingOut
+		// turn order, round completion, showdown — skips them for free. That
+		// covers a player with no chips as well as one sitting out.
+		p.Folded = !e.dealtIn(p)
 	}
 
+	// A busted human keeps their seat, dealt out, so they can refill from
+	// their wallet; the server's seat map would otherwise point at a player
+	// who is no longer there. Only bots, which have no wallet, are dropped.
 	active := []*Player{}
 	for _, p := range e.Players {
-		if p.Chips > 0 {
+		if p.Chips > 0 || !p.IsBot {
 			active = append(active, p)
 		} else {
 			e.addNotification(NoteSystem, fmt.Sprintf("%s is out of chips!", p.Name))

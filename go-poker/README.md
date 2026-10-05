@@ -145,6 +145,23 @@ Notes for driving a hand:
 - The admin dashboard at `/admin` needs `ADMIN_PASSWORD` set before start-up,
   and admin accounts deliberately cannot take a seat.
 
+## Buy-ins and refills
+
+Every table seats a player with exactly its buy-in: the fixed tier amount on a
+public table, the host's figure on a private one. The rest of the wallet stays
+in the wallet. A seated player adds more with the **+** beside their stack —
+any amount from one big blind up to their whole wallet, no table cap — logged as
+a `top_up` ledger row.
+
+A refill is refused while the player is still in the hand being played (a stack
+must not change under a live hand); once they fold, are dealt out, or the hand
+ends, it goes through. Private tables always allow refills; public tables follow
+the **Refill on public tables** setting.
+
+A player who busts keeps their seat, sat out, so they can refill and play on. A
+refill sits them back in; if they never do, the usual sit-out eviction frees the
+seat after ten minutes.
+
 ## Deposits
 
 Deposits have two modes, switched from **Site Settings** on the admin

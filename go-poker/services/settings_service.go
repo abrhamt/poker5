@@ -73,6 +73,8 @@ type UpdateSettingsRequest struct {
 	WithdrawalMinAmount          int64
 	WithdrawalCancelEnabled      bool
 	WithdrawalResetCooldownHours int32
+
+	PublicRefillEnabled bool
 }
 
 func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest) error {
@@ -134,5 +136,7 @@ func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest)
 		WithdrawalMinAmount:          req.WithdrawalMinAmount,
 		WithdrawalCancelEnabled:      req.WithdrawalCancelEnabled,
 		WithdrawalResetCooldownHours: req.WithdrawalResetCooldownHours,
+
+		PublicRefillEnabled: req.PublicRefillEnabled,
 	})
 }

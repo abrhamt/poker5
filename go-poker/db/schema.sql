@@ -156,6 +156,9 @@ CREATE TABLE IF NOT EXISTS site_settings (
     withdrawal_min_amount BIGINT NOT NULL DEFAULT 50,
     withdrawal_cancel_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     withdrawal_reset_cooldown_hours INTEGER NOT NULL DEFAULT 24,
+    -- Private tables always allow a seated player to refill from their
+    -- wallet; on public tables the house decides.
+    public_refill_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     -- PostgreSQL has no ON UPDATE CURRENT_TIMESTAMP, so UpdateSiteSettings
     -- sets this column explicitly.
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

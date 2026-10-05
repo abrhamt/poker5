@@ -148,6 +148,7 @@ func settingsJSON(s repository.SiteSetting) fiber.Map {
 		"withdrawal_min_amount":           s.WithdrawalMinAmount,
 		"withdrawal_cancel_enabled":       s.WithdrawalCancelEnabled,
 		"withdrawal_reset_cooldown_hours": s.WithdrawalResetCooldownHours,
+		"public_refill_enabled":           s.PublicRefillEnabled,
 		"updated_at":                      s.UpdatedAt,
 	}
 }
@@ -189,6 +190,7 @@ func (h *AdminHandler) UpdateSettings(c fiber.Ctx) error {
 		WithdrawalMinAmount          int64   `json:"withdrawal_min_amount"`
 		WithdrawalCancelEnabled      bool    `json:"withdrawal_cancel_enabled"`
 		WithdrawalResetCooldownHours int32   `json:"withdrawal_reset_cooldown_hours"`
+		PublicRefillEnabled          bool    `json:"public_refill_enabled"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		return jsonError(c, fiber.StatusBadRequest, errors.New("invalid settings payload"))
@@ -209,6 +211,7 @@ func (h *AdminHandler) UpdateSettings(c fiber.Ctx) error {
 		WithdrawalMinAmount:          req.WithdrawalMinAmount,
 		WithdrawalCancelEnabled:      req.WithdrawalCancelEnabled,
 		WithdrawalResetCooldownHours: req.WithdrawalResetCooldownHours,
+		PublicRefillEnabled:          req.PublicRefillEnabled,
 	})
 	if err != nil {
 		return jsonError(c, fiber.StatusBadRequest, err)

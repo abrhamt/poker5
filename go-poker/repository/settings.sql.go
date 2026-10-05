@@ -12,7 +12,8 @@ import (
 const getSiteSettings = `-- name: GetSiteSettings :one
 SELECT id, rake_mode, rake_percentage, referral_percentage_pct_mode, referral_percentage_sb_mode, countdown_seconds,
        real_deposits_enabled, deposit_account_name, deposit_account_number, gateway_deposits_enabled, intermission_seconds,
-       withdrawals_enabled, withdrawal_min_amount, withdrawal_cancel_enabled, withdrawal_reset_cooldown_hours, updated_at
+       withdrawals_enabled, withdrawal_min_amount, withdrawal_cancel_enabled, withdrawal_reset_cooldown_hours,
+       public_refill_enabled, updated_at
 FROM site_settings
 WHERE id = 1 LIMIT 1
 `
@@ -36,6 +37,7 @@ func (q *Queries) GetSiteSettings(ctx context.Context) (SiteSetting, error) {
 		&i.WithdrawalMinAmount,
 		&i.WithdrawalCancelEnabled,
 		&i.WithdrawalResetCooldownHours,
+		&i.PublicRefillEnabled,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -57,6 +59,7 @@ SET rake_mode = $1,
     withdrawal_min_amount = $12,
     withdrawal_cancel_enabled = $13,
     withdrawal_reset_cooldown_hours = $14,
+    public_refill_enabled = $15,
     updated_at = NOW()
 WHERE id = 1
 `
@@ -76,6 +79,7 @@ type UpdateSiteSettingsParams struct {
 	WithdrawalMinAmount          int64
 	WithdrawalCancelEnabled      bool
 	WithdrawalResetCooldownHours int32
+	PublicRefillEnabled          bool
 }
 
 // updated_at is set here rather than by the column: PostgreSQL has no
@@ -96,6 +100,7 @@ func (q *Queries) UpdateSiteSettings(ctx context.Context, arg UpdateSiteSettings
 		arg.WithdrawalMinAmount,
 		arg.WithdrawalCancelEnabled,
 		arg.WithdrawalResetCooldownHours,
+		arg.PublicRefillEnabled,
 	)
 	return err
 }

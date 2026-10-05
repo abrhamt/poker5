@@ -61,7 +61,15 @@ func (s *GameService) fireNextHand(roomCode string) {
 	}
 
 	table.Engine.Game.Intermission = false
-	table.Engine.StartHand()
+	if !table.Engine.StartHand() {
+		// Fewer than two players can be dealt in — someone busted or is
+		// sitting out. The table goes back to waiting rather than staying
+		// "started" with no hand, so a refill or sit-in can start it again.
+		table.Engine.Game.GameStarted = false
+		s.persistTable(table)
+		s.broadcastTableUpdate(table)
+		return
+	}
 	s.resetTurnTimer(table)
 	s.broadcastTableUpdate(table)
 }
@@ -91,6 +99,7 @@ func (s *GameService) SubmitAction(ctx context.Context, roomCode string, user *r
 
 	if table.Engine.Game.Intermission && table.Engine.Game.LastWinner != nil {
 		s.handlePotCommission(ctx, table)
+		s.sitOutBustedPlayers(table)
 		s.startIntermissionTimer(table)
 	}
 
@@ -170,6 +179,7 @@ func (s *GameService) handleTurnTimeout(roomCode string) {
 
 	if table.Engine.Game.Intermission && table.Engine.Game.LastWinner != nil {
 		s.handlePotCommission(context.Background(), table)
+		s.sitOutBustedPlayers(table)
 		s.startIntermissionTimer(table)
 	}
 
@@ -227,6 +237,7 @@ func (s *GameService) broadcastTableUpdate(table *ActiveTable) {
 	state["room_type"] = table.RoomType
 	state["max_players"] = table.MaxPlayers
 	state["host_user_id"] = table.HostUserID
+	state["refill_enabled"] = s.refillAllowed(context.Background(), table)
 
 	remainingSecs := int(time.Until(table.TimerExpiry).Seconds())
 	if remainingSecs < 0 {
@@ -276,6 +287,7 @@ func (s *GameService) GetTableState(ctx context.Context, roomCode string, curren
 	state["max_players"] = table.MaxPlayers
 	state["host_user_id"] = table.HostUserID
 	state["is_host"] = table.HostUserID != 0 && table.UserIDs[currentUsername] == table.HostUserID
+	state["refill_enabled"] = s.refillAllowed(ctx, table)
 
 	remainingSecs := int(time.Until(table.TimerExpiry).Seconds())
 	if remainingSecs < 0 {

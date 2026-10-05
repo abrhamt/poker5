@@ -75,7 +75,7 @@ func TestPrivateRoomRejectsMinimumBuyInBelowTenBigBlinds(t *testing.T) {
 	}
 }
 
-func TestPrivateRoomJoinEnforcesMinimumBuyIn(t *testing.T) {
+func TestPrivateRoomJoinTakesOnlyTheBuyIn(t *testing.T) {
 	roomSvc, gameSvc, q := newRoomFixture(t)
 	ctx := context.Background()
 	host := playerWithWallet(t, q, "host3", 5000)
@@ -87,24 +87,24 @@ func TestPrivateRoomJoinEnforcesMinimumBuyIn(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if err := gameSvc.JoinTable(ctx, room, &poor); !errors.Is(err, ErrBelowMinimumBuyIn) {
-		t.Fatalf("expected ErrBelowMinimumBuyIn, got %v", err)
+	if err := gameSvc.JoinTable(ctx, room, &poor); !errors.Is(err, ErrBelowBuyIn) {
+		t.Fatalf("expected ErrBelowBuyIn, got %v", err)
 	}
 	if got := walletBalance(t, q, poor.ID); got != 499 {
 		t.Fatalf("refused join touched the wallet: %d", got)
 	}
 
 	if err := gameSvc.JoinTable(ctx, room, &rich); err != nil {
-		t.Fatalf("join above minimum: %v", err)
+		t.Fatalf("join: %v", err)
 	}
-	if got := walletBalance(t, q, rich.ID); got != 0 {
-		t.Fatalf("whole wallet should become chips, wallet = %d", got)
+	if got := walletBalance(t, q, rich.ID); got != 750 {
+		t.Fatalf("only the buy-in should leave the wallet, wallet = %d", got)
 	}
 	table, err := gameSvc.GetTable(room.RoomCode)
 	if err != nil {
 		t.Fatalf("get table: %v", err)
 	}
-	if len(table.Engine.Players) != 1 || table.Engine.Players[0].Chips != 1250 {
+	if len(table.Engine.Players) != 1 || table.Engine.Players[0].Chips != 500 {
 		t.Fatalf("unexpected seated chips %+v", table.Engine.Players)
 	}
 }

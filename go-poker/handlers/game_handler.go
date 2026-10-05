@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
@@ -142,6 +143,44 @@ func (h *GameHandler) SitIn(c fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+// Refill moves more of the player's wallet onto their stack at this table.
+func (h *GameHandler) Refill(c fiber.Ctx) error {
+	token := c.Cookies("poker_session")
+	if token == "" {
+		token = c.Get("Authorization")
+	}
+
+	user, err := h.auth.GetUserByToken(c.Context(), token)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	var body struct {
+		Amount int64 `json:"amount"`
+	}
+	if err := c.Bind().JSON(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid refill request"})
+	}
+
+	chips, err := h.game.Refill(c.Context(), c.Params("id"), user.ID, body.Amount)
+	if err != nil {
+		var tooSmall services.RefillTooSmallError
+		status := fiber.StatusInternalServerError
+		switch {
+		case errors.Is(err, services.ErrRefillDisabled):
+			status = fiber.StatusForbidden
+		case errors.Is(err, services.ErrRefillDuringHand):
+			status = fiber.StatusConflict
+		case errors.Is(err, services.ErrInsufficientBalance), errors.As(err, &tooSmall),
+			errors.Is(err, services.ErrPlayerNotFound), errors.Is(err, services.ErrTableNotFound):
+			status = fiber.StatusBadRequest
+		}
+		return c.Status(status).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"status": "ok", "chips": chips})
 }
 
 func (h *GameHandler) GetState(c fiber.Ctx) error {

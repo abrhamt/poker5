@@ -204,6 +204,7 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	table.Post("/:id/act", gameHandler.Act)
 	table.Post("/:id/start", gameHandler.Start)
 	table.Post("/:id/sit-in", gameHandler.SitIn)
+	table.Post("/:id/refill", gameHandler.Refill)
 	table.Get("/:id/state", gameHandler.GetState)
 
 	wallet := api.Group("/wallet")

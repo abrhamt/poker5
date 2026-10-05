@@ -66,9 +66,9 @@ func findPublicTier(smallBlind int32) (BlindTier, bool) {
 	return BlindTier{}, false
 }
 
-// CreatePrivateRoom creates a private table with no fixed buy-in: players
-// bring their whole wallet balance to the felt when they join (see
-// GameService.JoinTable), so long as it clears the big blind.
+// CreatePrivateRoom creates a host-configured table. Every player sits down
+// with exactly minBuyIn (the table's buy-in) and can add more from their
+// wallet afterwards with GameService.Refill.
 func (s *RoomService) CreatePrivateRoom(ctx context.Context, hostUserID int64, roomName string, smallBlind int32, maxPlayers int32, minBuyIn int64) (*repository.PokerRoom, error) {
 	if roomName == "" {
 		roomName = "Private Poker Room"
