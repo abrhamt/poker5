@@ -436,19 +436,47 @@ func (e *GameEngine) applyDecision(player *Player, decision *BotDecision) {
 		if bet <= 0 {
 			bet = needToCall + e.Game.LastRaise
 		}
-		amt := e.placeBet(player, bet)
-		if amt > needToCall {
-			e.Game.CurrentBet = player.RoundBet
-			e.Game.LastRaise = amt - needToCall
-			e.Game.RaisesThisRound++
-			for _, other := range e.Players {
-				if other.Name != player.Name && !other.Folded && !other.AllIn {
-					other.HasActed = false
-				}
+		amt := e.commitBet(player, bet, needToCall)
+		e.addNotification(NoteAction, fmt.Sprintf("%s raised to %d.", player.Name, amt))
+	case "allin":
+		// The whole stack, whatever that amounts to: a raise when it is more
+		// than the call, a call for less when it is not.
+		amt := e.commitBet(player, player.Chips, needToCall)
+		e.addNotification(NoteAction, fmt.Sprintf("%s is all in for %d.", player.Name, amt))
+	}
+}
+
+// commitBet puts bet into the pot for player. Anything beyond the amount
+// needed to call is a raise: it sets the new bet to match and gives everyone
+// still able to act another turn.
+func (e *GameEngine) commitBet(player *Player, bet, needToCall int) int {
+	amt := e.placeBet(player, bet)
+	if amt > needToCall {
+		e.Game.CurrentBet = player.RoundBet
+		e.Game.LastRaise = amt - needToCall
+		e.Game.RaisesThisRound++
+		for _, other := range e.Players {
+			if other.Name != player.Name && !other.Folded && !other.AllIn {
+				other.HasActed = false
 			}
 		}
-		e.Game.Pot += amt
-		e.addNotification(NoteAction, fmt.Sprintf("%s raised to %d.", player.Name, amt))
+	}
+	e.Game.Pot += amt
+	return amt
+}
+
+// legalHumanAction is the gate on what a person may send. Bots choose from
+// the engine's own logic; a client can send any string at all, and anything
+// applyDecision does not handle would otherwise still use up the turn — a
+// free check against a bet.
+func (e *GameEngine) legalHumanAction(player *Player, action string) bool {
+	switch action {
+	case "fold", "call", "raise", "allin":
+		return true
+	case "check":
+		return player.RoundBet >= e.Game.CurrentBet
+	default:
+		return false
 	}
 }
 
@@ -466,6 +494,9 @@ func (e *GameEngine) HumanAction(playerName, action string, amount int) bool {
 		return false
 	}
 	if (e.CurrentPlayerIx % len(e.Players)) != pIdx {
+		return false
+	}
+	if !e.legalHumanAction(player, action) {
 		return false
 	}
 

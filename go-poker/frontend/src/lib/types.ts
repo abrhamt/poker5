@@ -144,7 +144,8 @@ export interface TableState {
   is_sitting_out?: boolean
 }
 
-export type PokerAction = 'fold' | 'check' | 'call' | 'raise' | 'all-in'
+/** The engine's own action names (HumanAction in engine_betting.go). */
+export type PokerAction = 'fold' | 'check' | 'call' | 'raise' | 'allin'
 
 /** The empty state the UI renders before the first fetch resolves. */
 export const emptyTableState = (roomCode: string): TableState => ({

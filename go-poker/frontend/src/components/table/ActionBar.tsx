@@ -129,7 +129,8 @@ function PlayerActions({ state, hero, busy, onAct }: ActionBarProps & { hero: Se
               // The engine takes chips-to-commit, not a target — convert here.
               onClick={() => {
                 setRaiseOpen(false)
-                onAct('raise', amount - hero.round_bet)
+                if (isAllIn) onAct('allin')
+                else onAct('raise', amount - hero.round_bet)
               }}
               className="btn-gold flex-2 py-2 text-xs"
             >
@@ -165,7 +166,7 @@ function PlayerActions({ state, hero, busy, onAct }: ActionBarProps & { hero: Se
           label={canRaise ? (toCall > 0 ? 'Raise' : 'Bet') : 'All In'}
           tone="raise"
           disabled={locked || (!canRaise && hero.chips <= 0)}
-          onClick={() => (canRaise ? setRaiseOpen((open) => !open) : onAct('raise', hero.chips))}
+          onClick={() => (canRaise ? setRaiseOpen((open) => !open) : onAct('allin'))}
           icon={
             <>
               <line x1="12" y1="19" x2="12" y2="5" />
