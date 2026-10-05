@@ -9,6 +9,7 @@ const TYPES = [
   'withdrawal',
   'withdrawal_refund',
   'buy_in',
+  'top_up',
   'cash_out',
   'winner_payout',
   'site_rake',

@@ -16,6 +16,7 @@ interface SeatProps {
   revealed: boolean
   isWinner: boolean
   winningCards: Set<string>
+  onRefill?: () => void
 }
 
 export function Seat({
@@ -28,6 +29,7 @@ export function Seat({
   revealed,
   isWinner,
   winningCards,
+  onRefill,
 }: SeatProps) {
   const showCards = (isHero || revealed) && !player.folded && isFaceUp(player.cards?.[0])
   const cardWidth = isHero ? metrics.heroCard : metrics.card
@@ -133,6 +135,27 @@ export function Seat({
               {player.chips.toLocaleString()}
             </span>
           </span>
+
+          {/* Hung off the side of the plate rather than inside it, so it
+              never changes the plate's size the table height is built on. */}
+          {onRefill && (
+            <button
+              type="button"
+              onClick={onRefill}
+              aria-label="Add chips"
+              title="Add chips"
+              className="absolute top-1/2 left-full grid -translate-y-1/2 place-items-center rounded-full border border-gold/40 bg-black/75 font-bold text-gold-light transition-colors hover:bg-gold/20 active:scale-95"
+              style={{
+                marginLeft: `${metrics.nameSize * 0.3}px`,
+                width: `${metrics.chipsSize * 1.7}px`,
+                height: `${metrics.chipsSize * 1.7}px`,
+                fontSize: `${metrics.chipsSize * 1.2}px`,
+                lineHeight: 1,
+              }}
+            >
+              +
+            </button>
+          )}
 
           {/* Absolutely placed so a showdown tag never grows the plate — the
               table height is computed from the plate's resting size. */}

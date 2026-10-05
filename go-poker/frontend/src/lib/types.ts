@@ -128,6 +128,8 @@ export interface TableState {
   max_players: number
   host_user_id: number
   is_host?: boolean
+  /** Whether seated players may top up from their wallet at this table. */
+  refill_enabled?: boolean
 
   turn_remaining_seconds: number
   turn_total_seconds: number

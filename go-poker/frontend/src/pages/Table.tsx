@@ -16,6 +16,7 @@ import { Felt } from '../components/table/Felt'
 import { ActionBar } from '../components/table/ActionBar'
 import { ActionFeed } from '../components/table/ActionFeed'
 import { SitOutPanel } from '../components/table/SitOutPanel'
+import { OutOfChips, RefillSheet } from '../components/table/Refill'
 import { OrientationGate } from '../components/table/OrientationGate'
 import { TableMenu } from '../components/table/TableMenu'
 
@@ -31,6 +32,7 @@ export default function Table() {
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
+  const [refillOpen, setRefillOpen] = useState(false)
 
   // The game screen owns the whole viewport: no page scroll, no rubber-banding
   // over the felt, and fullscreen released on the way out.
@@ -113,6 +115,20 @@ export default function Table() {
   const onStart = useCallback(() => void run(() => api.table.start(code)), [run, code])
   const onSitIn = useCallback(() => void run(() => api.table.sitIn(code)), [run, code])
 
+  async function refill(amount: number) {
+    setBusy(true)
+    try {
+      await api.table.refill(code, amount)
+      toast(`Added ${amount.toLocaleString()} chips.`, 'success')
+      setRefillOpen(false)
+      await Promise.all([load(), refresh()])
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not add chips.', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function leave() {
     setConfirmLeave(false)
     setBusy(true)
@@ -129,6 +145,12 @@ export default function Table() {
   // A spectator can only take a seat between hands.
   const canSit = !hero && (!state.game_started || state.intermission)
 
+  // The server sits a player out when a hand leaves them with nothing.
+  const busted = !!hero && hero.chips === 0 && !!hero.sitting_out
+  const canRefill = !!hero && state.refill_enabled !== false
+  // Chips can't be added under a hand the player is still in.
+  const inHand = !!hero && state.game_started && !state.intermission && !state.game_finished && !hero.folded
+
   return (
     <div className="room-backdrop fixed inset-0 overflow-hidden select-none">
       {loading ? (
@@ -144,6 +166,7 @@ export default function Table() {
             turnFraction={turnFraction}
             onSit={onJoin}
             canSit={canSit && !busy}
+            onRefill={canRefill && !busted ? () => setRefillOpen(true) : undefined}
           />
 
           <TopChrome
@@ -162,7 +185,17 @@ export default function Table() {
             onAct={onAct}
             onJoin={onJoin}
             onStart={onStart}
+            busted={busted}
           />
+
+          {busted ? (
+            <OutOfChips
+              canRefill={canRefill}
+              busy={busy}
+              onRefill={() => setRefillOpen(true)}
+              onLeave={() => setConfirmLeave(true)}
+            />
+          ) : null}
         </>
       )}
 
@@ -190,7 +223,18 @@ export default function Table() {
         onCancel={() => setConfirmLeave(false)}
       />
 
-      {hero?.sitting_out ? <SitOutPanel busy={busy} onSitIn={onSitIn} /> : null}
+      {hero?.sitting_out && !busted ? <SitOutPanel busy={busy} onSitIn={onSitIn} /> : null}
+
+      <RefillSheet
+        open={refillOpen}
+        wallet={user?.wallet ?? 0}
+        buyIn={state.buy_in}
+        bigBlind={state.big_blind}
+        inHand={inHand}
+        busy={busy}
+        onClose={() => setRefillOpen(false)}
+        onSubmit={(amount) => void refill(amount)}
+      />
 
       {immersive.needsPrompt ? (
         <OrientationGate isPortrait={immersive.isPortrait} onEnter={() => void immersive.enter()} />

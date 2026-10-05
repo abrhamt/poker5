@@ -8,6 +8,8 @@ interface ActionBarProps {
   onAct: (action: PokerAction, amount?: number) => void
   onJoin: () => void
   onStart: () => void
+  /** Seated with no chips left: there is nothing to act with. */
+  busted?: boolean
 }
 
 /**
@@ -28,7 +30,8 @@ export function ActionBar(props: ActionBarProps) {
 
       <div className="pointer-events-none absolute inset-x-2 bottom-2 z-40 flex items-end justify-end sm:inset-x-4 sm:bottom-3">
         <div className="pointer-events-auto">
-          {hero ? <PlayerActions {...props} hero={hero} /> : <SitDown {...props} />}
+          {/* A busted player has no actions; the table shows the refill card. */}
+          {hero ? props.busted ? null : <PlayerActions {...props} hero={hero} /> : <SitDown {...props} />}
         </div>
       </div>
     </>
@@ -220,11 +223,7 @@ function SitDown({ state, busy, onJoin }: ActionBarProps) {
 
   return (
     <button type="button" onClick={onJoin} disabled={busy} className="btn-gold px-5 py-3 text-sm">
-      {state.room_type === 'private'
-        ? state.buy_in > 0
-          ? `Sit Down · Wallet Balance (min ${state.buy_in.toLocaleString()} ETB)`
-          : 'Sit Down · Wallet Balance'
-        : `Sit Down · ${state.buy_in.toLocaleString()} ETB`}
+      {`Sit Down · ${state.buy_in.toLocaleString()} ETB`}
     </button>
   )
 }

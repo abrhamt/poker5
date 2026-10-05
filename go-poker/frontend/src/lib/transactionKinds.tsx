@@ -41,6 +41,17 @@ const KINDS: Record<string, TransactionKind> = {
       </>,
     ),
   },
+  top_up: {
+    label: 'Table top-up',
+    tone: 'bg-amber-500/12 text-amber-300',
+    icon: icon(
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <line x1="12" y1="8" x2="12" y2="16" />
+        <line x1="8" y1="12" x2="16" y2="12" />
+      </>,
+    ),
+  },
   cash_out: {
     label: 'Cash out',
     tone: 'bg-sky-500/12 text-sky-300',

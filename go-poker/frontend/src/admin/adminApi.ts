@@ -41,6 +41,7 @@ export interface AdminSettings {
   withdrawal_min_amount: number
   withdrawal_cancel_enabled: boolean
   withdrawal_reset_cooldown_hours: number
+  public_refill_enabled: boolean
   updated_at?: string
 }
 

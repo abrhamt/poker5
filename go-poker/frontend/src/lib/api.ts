@@ -113,6 +113,9 @@ export const api = {
     leave: (roomCode: string) => post<unknown>(`/api/table/${roomCode}/leave`),
     start: (roomCode: string) => post<unknown>(`/api/table/${roomCode}/start`),
     sitIn: (roomCode: string) => post<unknown>(`/api/table/${roomCode}/sit-in`),
+    /** Moves `amount` from the wallet onto the player's stack. */
+    refill: (roomCode: string, amount: number) =>
+      post<{ chips: number }>(`/api/table/${roomCode}/refill`, { amount }),
     act: (roomCode: string, action: PokerAction, amount = 0) =>
       post<unknown>(`/api/table/${roomCode}/act`, { action, amount }),
   },

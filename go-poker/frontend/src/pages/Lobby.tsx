@@ -353,7 +353,7 @@ function CreatePrivateForm({
 
       <div>
         <label className="label" htmlFor="min_buy_in">
-          Minimum buy-in (ETB)
+          Buy-in (ETB)
         </label>
         <input
           id="min_buy_in"
@@ -369,7 +369,7 @@ function CreatePrivateForm({
         />
         <p className="mt-1 text-[11px] text-muted">
           {buyInOk
-            ? `Players need at least ${minBuyIn.toLocaleString()} ETB in their wallet to sit down.`
+            ? `Everyone sits down with ${minBuyIn.toLocaleString()} ETB and can add more from their wallet at the table.`
             : `Must be at least ${floor.toLocaleString()} ETB (10 big blinds).`}
         </p>
       </div>

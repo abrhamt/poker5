@@ -15,9 +15,11 @@ interface FeltProps {
   turnFraction: number
   onSit?: () => void
   canSit: boolean
+  /** Opens the refill sheet; when set, the hero's seat shows a small "+". */
+  onRefill?: () => void
 }
 
-export function Felt({ state, heroName, winningCards, turnFraction, onSit, canSit }: FeltProps) {
+export function Felt({ state, heroName, winningCards, turnFraction, onSit, canSit, onRefill }: FeltProps) {
   const [stageRef, stage] = useElementSize<HTMLDivElement>()
 
   const seats = rotateToHero(state.players ?? [], heroName)
@@ -138,6 +140,7 @@ export function Felt({ state, heroName, winningCards, turnFraction, onSit, canSi
                 anchor={anchor}
                 metrics={metrics}
                 isHero={player.name === heroName}
+                onRefill={player.name === heroName ? onRefill : undefined}
                 isTurn={
                   player.name === state.current_turn_player &&
                   state.game_started &&

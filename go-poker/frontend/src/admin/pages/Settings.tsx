@@ -81,6 +81,12 @@ export default function Settings() {
                 onChange={(v) => set('referral_percentage_sb_mode', v)}
               />
             </div>
+            <Toggle
+              label="Refill on public tables"
+              description="Lets seated players add chips from their wallet between hands. Private tables always allow it."
+              checked={draft.public_refill_enabled}
+              onChange={(v) => set('public_refill_enabled', v)}
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               <NumberField
                 label="Countdown before a hand (s)"
