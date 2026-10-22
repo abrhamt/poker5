@@ -232,6 +232,7 @@ func (s *AuthService) GetUserByToken(ctx context.Context, token string) (*reposi
 		ReferredBy:   row.ReferredBy,
 		Role:         row.Role,
 		CreatedAt:    row.CreatedAt,
+		Avatar:       row.Avatar,
 	}, nil
 }
 

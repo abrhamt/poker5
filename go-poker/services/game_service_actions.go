@@ -171,6 +171,17 @@ func (s *GameService) handlePotCommission(ctx context.Context, table *ActiveTabl
 		return
 	}
 
+	// What each winner took from the pot, and what the rake took back off
+	// them, for the hand's history record — written whatever happens below.
+	gross := map[string]int64{}
+	rakeByWinner := map[string]int64{}
+	for _, payout := range payouts {
+		if payout.Amount > 0 {
+			gross[payout.Winner] += int64(payout.Amount)
+		}
+	}
+	defer func() { s.recordHand(table, gross, rakeByWinner) }()
+
 	settings, err := s.settings.Get(ctx)
 	if err != nil {
 		return
@@ -195,6 +206,7 @@ func (s *GameService) handlePotCommission(ctx context.Context, table *ActiveTabl
 		if raked <= 0 {
 			continue
 		}
+		rakeByWinner[payout.Winner] += raked
 		for _, p := range table.Engine.Players {
 			if p.Name == payout.Winner {
 				p.Chips -= int(raked)
@@ -310,6 +322,7 @@ func (s *GameService) GetTableState(ctx context.Context, roomCode string, curren
 			pMap["small_blind"] = actualPlayer.IsSmallBlind
 			pMap["big_blind"] = actualPlayer.IsBigBlind
 			pMap["sitting_out"] = actualPlayer.SittingOut
+			pMap["avatar"] = s.avatarFor(ctx, table, actualPlayer)
 
 			if pName == currentUsername {
 				state["is_sitting_out"] = actualPlayer.SittingOut
