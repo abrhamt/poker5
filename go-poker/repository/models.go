@@ -55,6 +55,24 @@ type GatewayDeposit struct {
 	ResolvedAt      int64
 }
 
+type HandPlayer struct {
+	ID         int64
+	SessionID  int64
+	UserID     int64
+	RoomCode   string
+	PlayerName string
+	SeatIndex  int32
+	Card1      string
+	Card2      string
+	Invested   int64
+	Won        int64
+	Net        int64
+	Folded     bool
+	ShowedDown bool
+	HandName   string
+	CreatedAt  time.Time
+}
+
 type OtpSendThrottle struct {
 	ID              int64
 	PhoneNumber     string
@@ -194,6 +212,7 @@ type User struct {
 	ReferredBy   sql.NullString
 	Role         string
 	CreatedAt    time.Time
+	Avatar       int16
 }
 
 type UserSession struct {

@@ -6,7 +6,7 @@ VALUES ($1, $2, $3);
 -- Returns the signed-in user together with the session's own timestamps, so a
 -- single round trip can both authenticate the request and decide whether the
 -- session is due to be slid forward (see AuthService.GetUserByToken).
-SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at,
+SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at, u.avatar,
        s.expires_at AS session_expires_at,
        s.created_at AS session_created_at
 FROM user_sessions s
@@ -34,3 +34,8 @@ ORDER BY id DESC LIMIT 20;
 -- Used when a password is reset: every other device is signed out, so an
 -- attacker who already holds a session cannot survive the victim's remediation.
 DELETE FROM user_sessions WHERE user_id = $1;
+
+-- name: DeleteOtherSessionTokens :exec
+-- Used when a signed-in player changes their password: every other device is
+-- signed out, but the session they made the change from stays.
+DELETE FROM user_sessions WHERE user_id = $1 AND session_token <> $2;

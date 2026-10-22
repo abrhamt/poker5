@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS users (
     referral_code CHAR(6) NOT NULL UNIQUE,
     referred_by CHAR(6) DEFAULT NULL,
     role VARCHAR(16) NOT NULL DEFAULT 'player',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Index into the client's predefined avatar set; -1 means "not chosen",
+    -- and the client derives one from the username instead.
+    avatar SMALLINT NOT NULL DEFAULT -1
 );
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
 
@@ -45,6 +48,32 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_table ON game_sessions (table_id);
+
+-- One row per real player dealt into a hand recorded in game_sessions: what
+-- they held, put in and took out. It is what a player's own history and
+-- statistics are read from, so it is keyed for "this user's hands". Bots have
+-- no account and get no rows; they still appear in game_sessions.details_json.
+CREATE TABLE IF NOT EXISTS hand_players (
+    id BIGSERIAL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    room_code VARCHAR(32) NOT NULL,
+    -- The name they played under at the time; a later rename does not rewrite history.
+    player_name VARCHAR(64) NOT NULL,
+    seat_index INTEGER NOT NULL,
+    card1 VARCHAR(4) NOT NULL DEFAULT '',
+    card2 VARCHAR(4) NOT NULL DEFAULT '',
+    -- Chips put into the pot, chips taken back out after rake, and the difference.
+    invested BIGINT NOT NULL DEFAULT 0,
+    won BIGINT NOT NULL DEFAULT 0,
+    net BIGINT NOT NULL DEFAULT 0,
+    folded BOOLEAN NOT NULL DEFAULT FALSE,
+    showed_down BOOLEAN NOT NULL DEFAULT FALSE,
+    hand_name VARCHAR(64) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_hand_players_user ON hand_players (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hand_players_user_room ON hand_players (user_id, room_code, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS user_sessions (
     session_token VARCHAR(64) PRIMARY KEY,
