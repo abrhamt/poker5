@@ -60,6 +60,22 @@ func (q *Queries) CreateSessionToken(ctx context.Context, arg CreateSessionToken
 	return err
 }
 
+const deleteOtherSessionTokens = `-- name: DeleteOtherSessionTokens :exec
+DELETE FROM user_sessions WHERE user_id = $1 AND session_token <> $2
+`
+
+type DeleteOtherSessionTokensParams struct {
+	UserID       int64
+	SessionToken string
+}
+
+// Used when a signed-in player changes their password: every other device is
+// signed out, but the session they made the change from stays.
+func (q *Queries) DeleteOtherSessionTokens(ctx context.Context, arg DeleteOtherSessionTokensParams) error {
+	_, err := q.db.ExecContext(ctx, deleteOtherSessionTokens, arg.UserID, arg.SessionToken)
+	return err
+}
+
 const deleteSessionToken = `-- name: DeleteSessionToken :exec
 DELETE FROM user_sessions WHERE session_token = $1
 `
@@ -136,7 +152,7 @@ func (q *Queries) GetGameSessionsByTable(ctx context.Context, tableID string) ([
 }
 
 const getSessionWithUser = `-- name: GetSessionWithUser :one
-SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at,
+SELECT u.id, u.username, u.phone_number, u.password_hash, u.wallet, u.referral_code, u.referred_by, u.role, u.created_at, u.avatar,
        s.expires_at AS session_expires_at,
        s.created_at AS session_created_at
 FROM user_sessions s
@@ -154,6 +170,7 @@ type GetSessionWithUserRow struct {
 	ReferredBy       sql.NullString
 	Role             string
 	CreatedAt        time.Time
+	Avatar           int16
 	SessionExpiresAt time.Time
 	SessionCreatedAt time.Time
 }
@@ -174,6 +191,7 @@ func (q *Queries) GetSessionWithUser(ctx context.Context, sessionToken string) (
 		&i.ReferredBy,
 		&i.Role,
 		&i.CreatedAt,
+		&i.Avatar,
 		&i.SessionExpiresAt,
 		&i.SessionCreatedAt,
 	)

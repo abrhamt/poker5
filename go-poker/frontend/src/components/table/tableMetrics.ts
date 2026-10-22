@@ -26,9 +26,20 @@ export interface TableMetrics {
   cardInward: number
   cardLateral: number
   heroCardInward: number
-  heroCardLateral: number
+  /** The hero's hand owns the seat; the avatar steps this far along the rail. */
+  heroAvatarLateral: number
   betInward: number
   betLateral: number
+  /** The hero's cards fill the space in front of them, so their bet sits beside. */
+  heroBetInward: number
+  heroBetLateral: number
+  /** How far a 3D bet's amount label sits from its chips, back toward the rail. */
+  betLabelGap: number
+  /** Where the dealer button rests on the felt in front of its seat. */
+  dealerInward: number
+  dealerLateral: number
+  heroDealerInward: number
+  heroDealerLateral: number
 
   nameSize: number
   chipsSize: number
@@ -38,17 +49,27 @@ export interface TableMetrics {
 /** Ratios of the table's height. */
 const R = {
   avatar: 0.21,
-  heroAvatar: 0.23,
+  heroAvatar: 0.14,
   card: 0.098,
   heroCard: 0.19,
   boardCard: 0.2,
   boardGap: 0.018,
   cardInward: 0.16,
   cardLateral: 0.13,
-  heroCardInward: 0.17,
-  heroCardLateral: 0.28,
+  heroCardInward: 0.07,
+  heroAvatarLateral: 0.34,
   betInward: 0.24,
   betLateral: -0.17,
+  heroBetInward: 0.2,
+  heroBetLateral: -0.3,
+  betLabelGap: 0.068,
+  // Close to straight in from the avatar: a sideways offset this far along
+  // the rail would carry it off the felt on the curved ends of the table.
+  dealerInward: 0.21,
+  dealerLateral: -0.06,
+  // Above the hero's avatar, which sits beside their cards.
+  heroDealerInward: 0.2,
+  heroDealerLateral: 0.27,
   nameSize: 0.036,
   chipsSize: 0.04,
   tagSize: 0.032,
@@ -117,9 +138,16 @@ export function tableMetrics(stage: Size): TableMetrics {
     cardInward: height * R.cardInward,
     cardLateral: height * R.cardLateral,
     heroCardInward: height * R.heroCardInward,
-    heroCardLateral: height * R.heroCardLateral,
+    heroAvatarLateral: height * R.heroAvatarLateral,
     betInward: height * R.betInward,
     betLateral: height * R.betLateral,
+    heroBetInward: height * R.heroBetInward,
+    heroBetLateral: height * R.heroBetLateral,
+    betLabelGap: height * R.betLabelGap,
+    dealerInward: height * R.dealerInward,
+    dealerLateral: height * R.dealerLateral,
+    heroDealerInward: height * R.heroDealerInward,
+    heroDealerLateral: height * R.heroDealerLateral,
 
     nameSize: height * R.nameSize,
     chipsSize: height * R.chipsSize,

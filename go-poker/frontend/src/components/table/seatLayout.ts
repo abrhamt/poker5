@@ -66,13 +66,25 @@ export function anchorStyle(
   inward = 0,
   lateral = 0,
 ): React.CSSProperties {
-  const dx = anchor.inX * inward + anchor.inY * lateral
-  const dy = anchor.inY * inward - anchor.inX * lateral
+  const p = seatPoint(anchor, origin, inward, lateral)
 
   return {
-    left: `${origin.left + anchor.x + dx}px`,
-    top: `${origin.top + anchor.y + dy}px`,
+    left: `${p.x}px`,
+    top: `${p.y}px`,
     transform: 'translate(-50%, -50%)',
+  }
+}
+
+/** The same placement as anchorStyle, as a stage-pixel point for the 3D scene. */
+export function seatPoint(
+  anchor: SeatAnchor,
+  origin: { left: number; top: number },
+  inward = 0,
+  lateral = 0,
+): { x: number; y: number } {
+  return {
+    x: origin.left + anchor.x + anchor.inX * inward + anchor.inY * lateral,
+    y: origin.top + anchor.y + anchor.inY * inward - anchor.inX * lateral,
   }
 }
 

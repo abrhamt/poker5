@@ -4,22 +4,22 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id;
 
 -- name: GetUserByID :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE id = $1 LIMIT 1;
 
 -- name: GetUserByUsername :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE username = $1 LIMIT 1;
 
 -- name: GetUserByPhone :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE phone_number = $1 LIMIT 1;
 
 -- name: GetUserByReferralCode :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE referral_code = $1 LIMIT 1;
 
@@ -52,7 +52,7 @@ SET phone_number = $1
 WHERE id = $2;
 
 -- name: ListUsers :many
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE role != 'house'
 ORDER BY id DESC
@@ -61,7 +61,7 @@ LIMIT $1 OFFSET $2;
 -- name: SearchUsers :many
 -- ILIKE, not LIKE: PostgreSQL's LIKE is case-sensitive, so an admin searching
 -- for "Alice" would miss the user "alice" entirely.
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE role != 'house' AND (username ILIKE $1 OR phone_number ILIKE $2)
 ORDER BY id DESC
@@ -81,3 +81,13 @@ ON CONFLICT (user_id) DO UPDATE SET reset_at = EXCLUDED.reset_at;
 
 -- name: GetPasswordResetAt :one
 SELECT reset_at FROM password_resets WHERE user_id = $1;
+
+-- name: UpdateUserAvatar :exec
+UPDATE users
+SET avatar = $1
+WHERE id = $2;
+
+-- name: UpdateUsername :exec
+UPDATE users
+SET username = $1
+WHERE id = $2;

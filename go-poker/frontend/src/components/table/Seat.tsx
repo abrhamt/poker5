@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react'
 import type { SeatPlayer } from '../../lib/types'
 import type { SeatAnchor } from './seatLayout'
 import { anchorStyle } from './seatLayout'
 import type { TableMetrics } from './tableMetrics'
 import { PlayingCard, isFaceUp } from '../Card'
+import { PlayerAvatar } from '../PlayerAvatar'
 import { handCategory, handStrength } from '../../lib/handStrength'
 
 interface SeatProps {
@@ -15,7 +17,15 @@ interface SeatProps {
   turnFraction: number
   revealed: boolean
   isWinner: boolean
-  winningCards: Set<string>
+  /** Cards that make the hand being shown: lifted and ringed in gold. */
+  highlightCards: Set<string>
+  /** Cards that played no part in the winning hand, at showdown. */
+  dimCards: Set<string>
+  /** What this seat just won; its stack counts up to the new total. */
+  winAmount?: number
+  /** The felt is drawn in 3D, so chips and the dealer button live there. */
+  in3d: boolean
+  /** Opens the refill sheet; only the hero's own seat gets one. */
   onRefill?: () => void
 }
 
@@ -28,12 +38,19 @@ export function Seat({
   turnFraction,
   revealed,
   isWinner,
-  winningCards,
+  highlightCards,
+  dimCards,
+  winAmount = 0,
+  in3d,
   onRefill,
 }: SeatProps) {
   const showCards = (isHero || revealed) && !player.folded && isFaceUp(player.cards?.[0])
+  const chips = useCountUp(player.chips, winAmount > 0 ? player.chips - winAmount : null, WIN_COUNT_DELAY_MS)
   const cardWidth = isHero ? metrics.heroCard : metrics.card
   const avatarSize = isHero ? metrics.heroAvatar : metrics.avatar
+  // The hero's hand sits centred on the seat and their (smaller) avatar steps
+  // aside along the rail, so the two never overlap.
+  const avatarLateral = isHero ? metrics.heroAvatarLateral : 0
   // Seats on the far side of the table read top-down, so their plate belongs
   // above the avatar rather than below it, hanging off the felt either way.
   const plateAbove = anchor.inY > 0
@@ -50,7 +67,7 @@ export function Seat({
               anchor,
               metrics,
               isHero ? metrics.heroCardInward : metrics.cardInward,
-              isHero ? metrics.heroCardLateral : metrics.cardLateral,
+              isHero ? 0 : metrics.cardLateral,
             ),
             gap: `${cardWidth * 0.1}px`,
           }}
@@ -60,25 +77,36 @@ export function Seat({
               key={i}
               code={showCards ? code : '1B'}
               width={cardWidth}
-              winning={showCards && winningCards.has(code)}
+              winning={showCards && highlightCards.has(code)}
+              dim={showCards && dimCards.has(code)}
             />
           ))}
         </div>
       ) : null}
 
+      {/* In 3D the chips themselves sit on the felt and this is just their
+          label, tucked between the stack and the rail; flat, it stands in
+          for the chips. */}
       {player.round_bet > 0 ? (
         <div
           className="absolute z-20 flex items-center gap-1 rounded-full border border-gold/40 bg-black/75 font-bold text-gold-light"
           style={{
-            ...anchorStyle(anchor, metrics, metrics.betInward, metrics.betLateral),
+            ...anchorStyle(
+              anchor,
+              metrics,
+              (isHero ? metrics.heroBetInward : metrics.betInward) - (in3d ? metrics.betLabelGap : 0),
+              isHero ? metrics.heroBetLateral : metrics.betLateral,
+            ),
             fontSize: `${metrics.tagSize}px`,
             padding: `${metrics.tagSize * 0.25}px ${metrics.tagSize * 0.6}px`,
           }}
         >
-          <span
-            className="rounded-full bg-gold"
-            style={{ width: `${metrics.tagSize * 0.5}px`, height: `${metrics.tagSize * 0.5}px` }}
-          />
+          {in3d ? null : (
+            <span
+              className="rounded-full bg-gold"
+              style={{ width: `${metrics.tagSize * 0.5}px`, height: `${metrics.tagSize * 0.5}px` }}
+            />
+          )}
           {player.round_bet.toLocaleString()}
         </div>
       ) : null}
@@ -88,13 +116,15 @@ export function Seat({
         anchor={anchor}
         metrics={metrics}
         avatarSize={avatarSize}
+        avatarLateral={avatarLateral}
+        showDealer={!in3d}
       />
 
       <div
         className={`absolute z-30 flex flex-col items-center ${player.folded ? 'opacity-45' : ''} ${
           plateAbove ? 'flex-col-reverse' : ''
         }`}
-        style={anchorStyle(anchor, metrics)}
+        style={anchorStyle(anchor, metrics, 0, avatarLateral)}
       >
         <Avatar
           player={player}
@@ -132,7 +162,7 @@ export function Seat({
               className="font-bold text-gold-light tabular-nums"
               style={{ fontSize: `${metrics.chipsSize}px` }}
             >
-              {player.chips.toLocaleString()}
+              {chips.toLocaleString()}
             </span>
           </span>
 
@@ -177,6 +207,35 @@ export function Seat({
   )
 }
 
+/** Roughly when the pot's chips land on the winner, from the 3D payout flight. */
+const WIN_COUNT_DELAY_MS = 650
+const WIN_COUNT_MS = 900
+
+/**
+ * Shows `value`, but when `from` is given, rolls up to it from there instead
+ * of jumping — the winner's stack visibly taking in the pot.
+ */
+function useCountUp(value: number, from: number | null, delayMs: number): number {
+  const [shown, setShown] = useState(value)
+
+  useEffect(() => {
+    if (from === null) {
+      setShown(value)
+      return
+    }
+    setShown(from)
+    const begin = performance.now() + delayMs
+    let frame = requestAnimationFrame(function step(now) {
+      const t = Math.min(1, Math.max(0, (now - begin) / WIN_COUNT_MS))
+      setShown(Math.round(from + (value - from) * (1 - (1 - t) ** 3)))
+      if (t < 1) frame = requestAnimationFrame(step)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [value, from, delayMs])
+
+  return shown
+}
+
 function Avatar({
   player,
   size,
@@ -201,13 +260,12 @@ function Avatar({
       {isTurn ? <TurnRing fraction={turnFraction} /> : null}
 
       <div
-        className="grid size-full place-items-center rounded-full bg-linear-160 from-[#33513f] to-[#111f19] font-heading font-bold text-gold-light uppercase"
+        className="size-full overflow-hidden rounded-full"
         style={{
-          fontSize: `${size * 0.42}px`,
           boxShadow: `0 0 0 ${Math.max(2, size * 0.045)}px ${ringColour}, 0 3px 10px rgb(0 0 0 / 0.55)`,
         }}
       >
-        {player.name.charAt(0)}
+        <PlayerAvatar name={player.name} avatar={player.avatar} className="block size-full" />
       </div>
     </div>
   )
@@ -247,13 +305,19 @@ function PositionBadge({
   anchor,
   metrics,
   avatarSize,
+  avatarLateral,
+  showDealer,
 }: {
   player: SeatPlayer
   anchor: SeatAnchor
   metrics: TableMetrics
   avatarSize: number
+  /** How far the avatar itself sits along the rail from the seat anchor. */
+  avatarLateral: number
+  /** False when the 3D table draws the dealer button on the felt instead. */
+  showDealer: boolean
 }) {
-  const badge = player.dealer
+  const badge = player.dealer && showDealer
     ? { text: 'D', tone: 'bg-white text-ink' }
     : player.small_blind
       ? { text: 'SB', tone: 'bg-brand text-white' }
@@ -263,13 +327,15 @@ function PositionBadge({
 
   if (!badge) return null
 
-  const badgeSize = avatarSize * 0.38
+  // Sized off the standard avatar, not this seat's: the hero's avatar is
+  // deliberately small, and the dealer button still has to read at a glance.
+  const badgeSize = metrics.avatar * 0.38
 
   return (
     <span
       className={`absolute z-40 grid place-items-center rounded-full font-black shadow-[0_1px_4px_rgb(0_0_0/0.7)] ${badge.tone}`}
       style={{
-        ...anchorStyle(anchor, metrics, avatarSize * 0.52, -avatarSize * 0.58),
+        ...anchorStyle(anchor, metrics, avatarSize * 0.52, avatarLateral - avatarSize * 0.58),
         minWidth: `${badgeSize}px`,
         height: `${badgeSize}px`,
         fontSize: `${badgeSize * 0.5}px`,
@@ -297,6 +363,8 @@ function SeatTag({
   const pill = {
     fontSize: `${metrics.tagSize}px`,
     padding: `${metrics.tagSize * 0.12}px ${metrics.tagSize * 0.5}px`,
+    // One line, however narrow the column: "Pair of Kings" must not stack.
+    whiteSpace: 'nowrap' as const,
   }
 
   // Sitting out reads as folded to the engine, so check it first — "Away" is

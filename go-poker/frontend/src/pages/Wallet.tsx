@@ -13,7 +13,8 @@ import type {
 import { useAuth } from '../lib/auth'
 import { useGatewayDepositReturn } from '../lib/useGatewayDepositReturn'
 import { useToast } from '../components/Toast'
-import { DrawerLink, SideDrawer } from '../components/SideDrawer'
+import { SideDrawer } from '../components/SideDrawer'
+import { AccountNav } from '../components/PageShell'
 import { Sheet } from '../components/Sheet'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PendingWithdrawalBanner, WithdrawPanel } from '../components/wallet/Withdraw'
@@ -321,9 +322,7 @@ export default function Wallet() {
           navigate('/login', { replace: true })
         }}
       >
-        <nav className="flex flex-col gap-1.5">
-          <DrawerLink to="/lobby" label="Lobby" />
-        </nav>
+        <AccountNav current="/wallet" />
       </SideDrawer>
 
       <Sheet open={depositOpen} title={sheetTitle(method)} onClose={() => setDepositOpen(false)}>

@@ -11,6 +11,9 @@ import ResetPassword from './pages/ResetPassword'
 import Lobby from './pages/Lobby'
 import Wallet from './pages/Wallet'
 import Table from './pages/Table'
+import History from './pages/History'
+import Analytics from './pages/Analytics'
+import Profile from './pages/Profile'
 import { Spinner } from './components/Spinner'
 
 // The admin dashboard is its own chunk: players never download it.
@@ -38,6 +41,9 @@ export default function App() {
             <Route element={<RequireAuth />}>
               <Route path="/lobby" element={<Lobby />} />
               <Route path="/wallet" element={<Wallet />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/profile" element={<Profile />} />
               <Route path="/table/:code" element={<Table />} />
             </Route>
 

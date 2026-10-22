@@ -144,6 +144,13 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 		gameStorage = pgStorage
 	}
 	gameSvc := services.NewGameService(walletSvc, sseHub, settingsSvc, gameStorage, roomSvc)
+	historySvc := services.NewHistoryService(q, db)
+	gameSvc.SetHistory(historySvc)
+	gameSvc.SetAvatarLookup(func(ctx context.Context, userID int64) (int16, error) {
+		u, err := q.GetUserByID(ctx, userID)
+		return u.Avatar, err
+	})
+	profileSvc := services.NewProfileService(q, gameSvc)
 
 	bootstrap(context.Background(), authSvc, walletSvc)
 
@@ -161,6 +168,7 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	gameHandler := NewGameHandler(gameSvc, authSvc, roomSvc)
 	withdrawalHandler := NewWithdrawalHandler(authSvc, withdrawalSvc)
 	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc, depositSvc, withdrawalSvc)
+	accountHandler := NewAccountHandler(authSvc, historySvc, profileSvc)
 
 	s := &FiberServer{
 		stopBackground: stopBackground,
@@ -217,6 +225,15 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	wallet.Get("/withdraw-info", withdrawalHandler.Info)
 	wallet.Post("/withdraw", withdrawalHandler.Request)
 	wallet.Post("/withdrawals/:id/cancel", withdrawalHandler.Cancel)
+
+	// The signed-in player's own history, statistics and profile.
+	me := api.Group("/me")
+	me.Get("/history", accountHandler.HistoryRooms)
+	me.Get("/history/:code", accountHandler.HistoryRoomHands)
+	me.Get("/stats", accountHandler.Stats)
+	me.Post("/avatar", accountHandler.SetAvatar)
+	me.Post("/username", accountHandler.SetUsername)
+	me.Post("/password", accountHandler.SetPassword)
 
 	// Every page, the admin dashboard included, is rendered by the React app
 	// in frontend/; the admin API below is all JSON.

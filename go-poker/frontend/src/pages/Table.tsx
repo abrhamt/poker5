@@ -9,6 +9,7 @@ import { useCountdown } from '../lib/useCountdown'
 import { useActionFeed } from '../lib/useActionFeed'
 import { useAuth } from '../lib/auth'
 import { useImmersive, exitImmersive } from '../lib/useImmersive'
+import { unlockAudio } from '../lib/sound'
 import { useToast } from '../components/Toast'
 import { Spinner } from '../components/Spinner'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -17,7 +18,6 @@ import { ActionBar } from '../components/table/ActionBar'
 import { ActionFeed } from '../components/table/ActionFeed'
 import { SitOutPanel } from '../components/table/SitOutPanel'
 import { OutOfChips, RefillSheet } from '../components/table/Refill'
-import { OrientationGate } from '../components/table/OrientationGate'
 import { TableMenu } from '../components/table/TableMenu'
 
 export default function Table() {
@@ -25,7 +25,7 @@ export default function Table() {
   const { user, refresh, logout } = useAuth()
   const navigate = useNavigate()
   const toast = useToast()
-  const immersive = useImmersive()
+  useImmersive()
 
   const [state, setState] = useState<TableState>(() => emptyTableState(code))
   const [loading, setLoading] = useState(true)
@@ -39,8 +39,12 @@ export default function Table() {
   useEffect(() => {
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    // Browsers only let a page make sound after a gesture: the first tap on
+    // the table is what wakes the audio up.
+    document.addEventListener('pointerdown', unlockAudio, true)
     return () => {
       document.body.style.overflow = previous
+      document.removeEventListener('pointerdown', unlockAudio, true)
       void exitImmersive()
     }
   }, [])
@@ -74,12 +78,6 @@ export default function Table() {
     () => state.players?.find((p) => p.name === heroName),
     [state.players, heroName],
   )
-
-  const winningCards = useMemo(() => {
-    const revealed = state.intermission || state.game_finished
-    if (!revealed) return new Set<string>()
-    return new Set(state.winner?.winning_cards ?? [])
-  }, [state.intermission, state.game_finished, state.winner])
 
   const turnActive = state.game_started && !state.intermission
   const turnRemaining = useCountdown(state.turn_ends_at_ms, turnActive)
@@ -162,7 +160,6 @@ export default function Table() {
           <Felt
             state={state}
             heroName={heroName}
-            winningCards={winningCards}
             turnFraction={turnFraction}
             onSit={onJoin}
             canSit={canSit && !busy}
@@ -235,10 +232,6 @@ export default function Table() {
         onClose={() => setRefillOpen(false)}
         onSubmit={(amount) => void refill(amount)}
       />
-
-      {immersive.needsPrompt ? (
-        <OrientationGate isPortrait={immersive.isPortrait} onEnter={() => void immersive.enter()} />
-      ) : null}
     </div>
   )
 }

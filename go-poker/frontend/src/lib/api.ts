@@ -4,6 +4,9 @@ import type {
   DepositOutcome,
   GatewayCheckout,
   GatewayDepositStatus,
+  HistoryHandPage,
+  HistoryRoom,
+  PlayerStats,
   PokerAction,
   PublicRoom,
   TableState,
@@ -153,5 +156,19 @@ export const api = {
     }) => post<{ withdrawal: Withdrawal }>('/api/wallet/withdraw', input),
     cancelWithdrawal: (id: number) =>
       post<{ withdrawal: Withdrawal }>(`/api/wallet/withdrawals/${id}/cancel`),
+  },
+
+  /** The signed-in player's own history, statistics and profile. */
+  me: {
+    historyRooms: () => request<{ rooms: HistoryRoom[] }>('/api/me/history'),
+    historyHands: (roomCode: string, page = 1, pageSize = 10) =>
+      request<HistoryHandPage>(
+        `/api/me/history/${encodeURIComponent(roomCode)}?page=${page}&page_size=${pageSize}`,
+      ),
+    stats: () => request<PlayerStats>('/api/me/stats'),
+    setAvatar: (avatar: number) => post<{ avatar: number }>('/api/me/avatar', { avatar }),
+    setUsername: (username: string) => post<unknown>('/api/me/username', { username }),
+    setPassword: (currentPassword: string, newPassword: string) =>
+      post<unknown>('/api/me/password', { current_password: currentPassword, new_password: newPassword }),
   },
 }

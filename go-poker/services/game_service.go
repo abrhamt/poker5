@@ -65,6 +65,10 @@ type ActiveTable struct {
 	// One eviction timer per sat-out player: sitting out stops the blinds, but
 	// a seat held by someone who never comes back still costs the table.
 	SitOutTimers map[string]*time.Timer
+	// Each seated player's chosen avatar, by name, so the table state does not
+	// read the users table on every refresh. Filled on join, or on first use
+	// for a table restored after a restart.
+	Avatars map[string]int16
 }
 
 type GameService struct {
@@ -75,6 +79,10 @@ type GameService struct {
 	settings *SettingsService
 	storage  poker.Storage
 	rooms    *RoomService
+	// Optional collaborators, set after construction (see SetHistory and
+	// SetAvatarLookup); without them hands go unrecorded and avatars default.
+	history  *HistoryService
+	avatarOf func(ctx context.Context, userID int64) (int16, error)
 }
 
 func NewGameService(wallet *WalletService, sse *SSEHub, settings *SettingsService, storage poker.Storage, rooms *RoomService) *GameService {
@@ -296,6 +304,10 @@ func (s *GameService) JoinTable(ctx context.Context, room *repository.PokerRoom,
 	table.Engine.Players = append(table.Engine.Players, player)
 	table.UserMap[user.ID] = seatIdx
 	table.UserIDs[user.Username] = user.ID
+	if table.Avatars == nil {
+		table.Avatars = map[string]int16{}
+	}
+	table.Avatars[user.Username] = user.Avatar
 	s.persistTable(table)
 
 	s.evaluateCountdown(ctx, table)

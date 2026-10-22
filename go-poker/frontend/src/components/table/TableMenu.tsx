@@ -1,5 +1,33 @@
 import type { User } from '../../lib/types'
-import { DrawerLink, SideDrawer } from '../SideDrawer'
+import { setSoundEnabled, unlockAudio, useSoundEnabled } from '../../lib/sound'
+import { SideDrawer } from '../SideDrawer'
+import { AccountNav } from '../PageShell'
+
+/** Table sounds on or off, remembered on this device. */
+function SoundToggle() {
+  const on = useSoundEnabled()
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => {
+        unlockAudio()
+        setSoundEnabled(!on)
+      }}
+      className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm"
+    >
+      <span className="font-semibold">Sound effects</span>
+      <span
+        className={`relative h-5 w-9 rounded-full transition-colors ${on ? 'bg-gold' : 'bg-white/15'}`}
+      >
+        <span
+          className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-[left] ${on ? 'left-4.5' : 'left-0.5'}`}
+        />
+      </span>
+    </button>
+  )
+}
 
 /** The table's slice of the shared drawer: the room code, and the way out. */
 export function TableMenu({
@@ -49,10 +77,9 @@ export function TableMenu({
         </div>
       </div>
 
-      <nav className="flex flex-col gap-1.5">
-        <DrawerLink to="/lobby" label="Lobby" />
-        <DrawerLink to="/wallet" label="Wallet" />
-      </nav>
+      <SoundToggle />
+
+      <AccountNav />
     </SideDrawer>
   )
 }

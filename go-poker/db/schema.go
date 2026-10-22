@@ -34,6 +34,7 @@ var migrations = []string{
 	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS withdrawal_cancel_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
 	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS withdrawal_reset_cooldown_hours INTEGER NOT NULL DEFAULT 24`,
 	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS public_refill_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar SMALLINT NOT NULL DEFAULT -1`,
 }
 
 // Apply creates the schema, runs the migrations, and makes sure the single

@@ -6,7 +6,8 @@ import { useSSE } from '../lib/useSSE'
 import { useAuth } from '../lib/auth'
 import { useToast } from '../components/Toast'
 import { Spinner } from '../components/Spinner'
-import { DrawerLink, SideDrawer } from '../components/SideDrawer'
+import { SideDrawer } from '../components/SideDrawer'
+import { AccountNav } from '../components/PageShell'
 import { RoomGrid } from '../components/lobby/RoomGrid'
 import { Sheet } from '../components/Sheet'
 import { HelpPanel } from '../components/lobby/HelpPanel'
@@ -136,9 +137,7 @@ export default function Lobby() {
           ) : null
         }
       >
-        <nav className="flex flex-col gap-1.5">
-          <DrawerLink to="/wallet" label="Wallet" />
-        </nav>
+        <AccountNav current="/lobby" />
 
         <div className="rounded-xl border border-gold/20 bg-black/30 px-3 py-2.5">
           <span className="text-[10px] tracking-wide text-muted uppercase">Referral code</span>

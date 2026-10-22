@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { User } from '../lib/types'
+import { PlayerAvatar } from './PlayerAvatar'
 
 /**
  * The one menu surface for the app's full-screen pages. Both the lobby and the
@@ -31,8 +32,8 @@ export function SideDrawer({
       <aside className="animate-rise relative flex h-full w-[min(80vw,17rem)] flex-col gap-4 overflow-y-auto border-r border-gold/20 bg-surface/95 p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gold/20 font-heading font-bold text-gold-light uppercase">
-              {user?.username.charAt(0) ?? '?'}
+            <span className="size-9 shrink-0 overflow-hidden rounded-full ring-1 ring-gold/40">
+              <PlayerAvatar name={user?.username ?? ''} avatar={user?.avatar} className="block size-full" />
             </span>
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-semibold">{user?.username}</span>
