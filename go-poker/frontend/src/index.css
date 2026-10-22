@@ -35,8 +35,40 @@
 
   --animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
   --animate-rise: rise 0.28s ease-out;
-  --animate-rotate-hint: rotate-hint 2.2s ease-in-out infinite;
   --animate-slide-up: slide-up 0.18s ease-out;
+  --animate-deal-in: deal-in 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+  --animate-card-flip: card-flip 0.4s ease-out both;
+  --animate-win-pop: win-pop 2.2s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  --animate-confetti: confetti 2.4s cubic-bezier(0.25, 0.6, 0.4, 1) both;
+}
+
+/* A board card flies in from the deck (offset set per card)… */
+@keyframes deal-in {
+  from { opacity: 0; transform: translate(var(--deal-x), var(--deal-y)) rotate(-14deg) scale(0.55); }
+  20%  { opacity: 1; }
+  to   { opacity: 1; transform: none; }
+}
+
+/* …and turns face-up as it lands. */
+@keyframes card-flip {
+  from { transform: rotateY(180deg); }
+  to   { transform: rotateY(0deg); }
+}
+
+/* "You win!": punches in, holds, and drifts away. */
+@keyframes win-pop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  14%  { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  22%  { transform: translate(-50%, -50%) scale(1); }
+  78%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -62%) scale(0.92); }
+}
+
+/* One confetti piece: drift and fall distances are set per piece. */
+@keyframes confetti {
+  from { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  85%  { opacity: 1; }
+  to   { opacity: 0; transform: translate(var(--drift), var(--fall)) rotate(var(--spin)); }
 }
 
 @keyframes pulse-ring {
@@ -55,10 +87,22 @@
   to   { opacity: 1; transform: none; }
 }
 
-/* Nudges the phone illustration on the rotate prompt a quarter turn and back. */
-@keyframes rotate-hint {
-  0%, 40%   { transform: rotate(0deg); }
-  60%, 100% { transform: rotate(-90deg); }
+/* The table only plays in landscape, and the player is never asked to rotate.
+   While it is open (useImmersive sets the attribute) a portrait viewport lays
+   the whole app out at landscape size and turns it a quarter turn clockwise
+   into the screen. Dialogs, drawers and toasts live inside #root, so they turn
+   with it; a viewport that really is landscape is left untouched. */
+@media (orientation: portrait) {
+  html[data-force-landscape] #root {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100dvh;
+    height: 100vw;
+    overflow: hidden;
+    transform-origin: top left;
+    transform: rotate(90deg) translateY(-100%);
+  }
 }
 
 @layer base {

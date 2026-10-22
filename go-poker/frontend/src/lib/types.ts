@@ -12,6 +12,76 @@ export interface User {
   referral_code: string
   role?: string
   created_at?: string
+  /** Chosen predefined avatar; -1 (or absent) means one derived from the name. */
+  avatar?: number
+}
+
+/** A room in the player's history, with their own totals there. */
+export interface HistoryRoom {
+  room_code: string
+  room_name: string
+  room_type: string
+  small_blind: number
+  big_blind: number
+  hands: number
+  hands_won: number
+  net: number
+  first_played: string
+  last_played: string
+}
+
+export interface HistorySeat {
+  name: string
+  /** Absent for a player who never showed their hand. */
+  cards?: string[]
+  invested: number
+  won: number
+  net: number
+  folded: boolean
+  showed_down: boolean
+  hand_name?: string
+  is_bot?: boolean
+  seat?: number
+}
+
+export interface HistoryHand {
+  id: number
+  hand_number: number
+  played_at: string
+  pot: number
+  rake: number
+  board: string[]
+  small_blind: number
+  big_blind: number
+  winner_name: string
+  winning_hand: string
+  you: HistorySeat & { cards: string[] }
+  players: HistorySeat[]
+}
+
+export interface HistoryHandPage {
+  hands: HistoryHand[]
+  page: number
+  page_size: number
+  total: number
+  total_pages: number
+}
+
+export interface PlayerStats {
+  hands: number
+  hands_won: number
+  hands_folded: number
+  showdowns: number
+  showdowns_won: number
+  net: number
+  invested: number
+  won: number
+  biggest_win: number
+  biggest_loss: number
+  rooms: number
+  best_hand: string
+  winning_hands: { category: string; times: number }[]
+  trend: { at: string; net: number; cumulative: number }[]
 }
 
 export interface Transaction {
@@ -69,6 +139,8 @@ export interface SeatPlayer {
   is_me?: boolean
   /** Holding a seat but dealt out — no cards, no blinds, no turn. */
   sitting_out?: boolean
+  /** The player's chosen avatar; -1 or absent derives one from the name. */
+  avatar?: number
 }
 
 /** One line of the table's action feed. `kind` is one of the engine's

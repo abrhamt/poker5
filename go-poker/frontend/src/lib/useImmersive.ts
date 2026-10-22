@@ -1,69 +1,53 @@
-import { useCallback, useEffect, useState } from 'react'
-
-interface ImmersiveState {
-  isPortrait: boolean
-  isFullscreen: boolean
-  /** True until the player has taken the gesture that unlocks fullscreen. */
-  needsPrompt: boolean
-  enter: () => Promise<void>
-}
+import { useEffect } from 'react'
 
 /**
- * Drives the landscape game view.
+ * Keeps the game view in landscape without ever asking the player to rotate.
  *
- * The web cannot force an orientation on its own: `screen.orientation.lock`
- * only works from inside fullscreen, and iOS Safari does not implement it at
- * all. So the table asks for the gesture once, uses it to go fullscreen and
- * lock where that is supported, and otherwise falls back to holding a
- * "rotate your device" prompt up until the viewport actually is landscape.
+ * While the table is mounted, <html> carries `data-force-landscape`, and in a
+ * portrait viewport the stylesheet turns the whole app a quarter turn so the
+ * felt is laid out and drawn in landscape (see index.css). Nothing is put in
+ * front of the table, so a seated player never burns their turn clock behind
+ * a prompt.
+ *
+ * Fullscreen and a real orientation lock still need a user gesture, so the
+ * player's own taps on the table are borrowed for that, silently. Where the
+ * browser allows it (Android Chrome) the viewport turns landscape for real and
+ * the CSS rotation switches itself off; where it does not (iOS Safari) the
+ * rotation simply stays.
  */
-export function useImmersive(): ImmersiveState {
-  const [isPortrait, setIsPortrait] = useState(
-    () => typeof window !== 'undefined' && window.innerHeight > window.innerWidth,
-  )
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [prompted, setPrompted] = useState(false)
-
+export function useImmersive() {
   useEffect(() => {
-    const query = window.matchMedia('(orientation: portrait)')
-    const sync = () => setIsPortrait(query.matches)
-    sync()
-    query.addEventListener('change', sync)
+    const root = document.documentElement
+    root.dataset.forceLandscape = ''
 
-    const syncFullscreen = () => setIsFullscreen(!!document.fullscreenElement)
-    document.addEventListener('fullscreenchange', syncFullscreen)
+    // Touch devices only: a desktop window is landscape already, and jumping
+    // to fullscreen on the first click there would be a surprise.
+    const touch = window.matchMedia('(pointer: coarse)').matches
+    const onTap = () => {
+      if (!document.fullscreenElement) void enterImmersive()
+    }
+    if (touch) document.addEventListener('click', onTap, true)
 
     return () => {
-      query.removeEventListener('change', sync)
-      document.removeEventListener('fullscreenchange', syncFullscreen)
+      delete root.dataset.forceLandscape
+      document.removeEventListener('click', onTap, true)
     }
   }, [])
+}
 
-  const enter = useCallback(async () => {
-    setPrompted(true)
-    try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-      }
-    } catch {
-      // Fullscreen can be refused (iOS, or a permissions policy). The rotate
-      // prompt below still gets the player to a usable landscape view.
+async function enterImmersive() {
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+  } catch {
+    // Refused (iOS, or a permissions policy) — the CSS rotation still applies.
+  }
+  try {
+    const orientation = screen.orientation as ScreenOrientation & {
+      lock?: (o: string) => Promise<void>
     }
-    try {
-      const orientation = screen.orientation as ScreenOrientation & {
-        lock?: (o: string) => Promise<void>
-      }
-      await orientation.lock?.('landscape')
-    } catch {
-      // Unsupported on iOS and on desktop; nothing to do but let them rotate.
-    }
-  }, [])
-
-  return {
-    isPortrait,
-    isFullscreen,
-    needsPrompt: !prompted || isPortrait,
-    enter,
+    await orientation.lock?.('landscape')
+  } catch {
+    // Unsupported on iOS and on desktop; the CSS rotation covers it.
   }
 }
 
