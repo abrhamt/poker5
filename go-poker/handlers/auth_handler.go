@@ -241,6 +241,7 @@ func (h *AuthHandler) Me(c fiber.Ctx) error {
 			"referral_code": user.ReferralCode,
 			"role":          user.Role,
 			"created_at":    user.CreatedAt,
+			"avatar":        user.Avatar,
 		},
 	})
 }

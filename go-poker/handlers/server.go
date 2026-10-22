@@ -143,6 +143,13 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 		gameStorage = pgStorage
 	}
 	gameSvc := services.NewGameService(walletSvc, sseHub, settingsSvc, gameStorage, roomSvc)
+	historySvc := services.NewHistoryService(q, db)
+	gameSvc.SetHistory(historySvc)
+	gameSvc.SetAvatarLookup(func(ctx context.Context, userID int64) (int16, error) {
+		u, err := q.GetUserByID(ctx, userID)
+		return u.Avatar, err
+	})
+	profileSvc := services.NewProfileService(q, gameSvc)
 
 	bootstrap(context.Background(), authSvc, walletSvc)
 
@@ -159,6 +166,7 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	roomHandler := NewRoomHandler(roomSvc, authSvc, gameSvc)
 	gameHandler := NewGameHandler(gameSvc, authSvc, roomSvc)
 	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc, depositSvc)
+	accountHandler := NewAccountHandler(authSvc, historySvc, profileSvc)
 
 	s := &FiberServer{
 		stopBackground: stopBackground,
@@ -216,6 +224,15 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	wallet.Post("/deposit/gateway", gatewayHandler.Start)
 	wallet.Get("/deposit/gateway/:reference", gatewayHandler.Status)
 	wallet.Get("/transactions", walletHandler.GetTransactions)
+
+	// The signed-in player's own history, statistics and profile.
+	me := api.Group("/me")
+	me.Get("/history", accountHandler.HistoryRooms)
+	me.Get("/history/:code", accountHandler.HistoryRoomHands)
+	me.Get("/stats", accountHandler.Stats)
+	me.Post("/avatar", accountHandler.SetAvatar)
+	me.Post("/username", accountHandler.SetUsername)
+	me.Post("/password", accountHandler.SetPassword)
 
 	apiAdmin := api.Group("/admin", adminHandler.RequireAdmin)
 	apiAdmin.Post("/settings", adminHandler.UpdateSettings)
