@@ -2,8 +2,7 @@
 #
 # Caddy serves the built frontend from disk. The Go binary is a pure JSON + SSE
 # API on 127.0.0.1:9011 and serves no files at all, so /api is the only thing
-# that gets proxied — plus /admin while that dashboard is still server-rendered
-# HTML, which goes away once it is a Vite bundle too.
+# that gets proxied. The admin dashboard is part of the same bundle, at /admin.
 #
 # Replace goldenpoker.example.com with your domain; Caddy gets the certificate
 # itself.
@@ -25,12 +24,6 @@ goldenpoker.example.com {
 		}
 	}
 
-	# The last server-rendered page. Delete this block when the admin UI
-	# becomes its own bundle.
-	handle /admin* {
-		reverse_proxy 127.0.0.1:9011
-	}
-
 	handle {
 		root * /var/www/html/goldenpoker/dist
 
@@ -40,24 +33,19 @@ goldenpoker.example.com {
 		# not be cached at all: a stale index.html would point browsers at
 		# asset names that no longer exist. The matchers are mutually
 		# exclusive so none can override another.
-		#
-		# /legacy/ is deliberately not in the week-long group: admin.css and
-		# admin.js ship under fixed names and do change with a release, so a
-		# long cache would leave admins on the previous build's dashboard with
-		# no way to tell. Only the vendored htmx, which is version-pinned in
-		# its filename, is safe to keep.
-		@immutable path /assets/* /legacy/htmx.min.js
+		@immutable path /assets/*
 		@stable path /cards/*
-		@volatile not path /assets/* /cards/* /legacy/htmx.min.js
+		@volatile not path /assets/* /cards/*
 		header @immutable Cache-Control "public, max-age=31536000, immutable"
 		header @stable Cache-Control "public, max-age=604800"
 		header @volatile Cache-Control "no-store"
 
 		encode zstd gzip
 
-		# Unknown paths fall back to the app so a reload on /lobby or
-		# /table/12345 still works. {path} rather than {uri}: {uri} carries
-		# the query string, which would be looked up as part of the filename.
+		# Unknown paths fall back to the app so a reload on /lobby,
+		# /table/12345 or /admin/withdrawals still works. {path} rather
+		# than {uri}: {uri} carries the query string, which would be looked
+		# up as part of the filename.
 		try_files {path} /index.html
 		file_server
 	}

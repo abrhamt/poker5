@@ -55,6 +55,24 @@ type GatewayDeposit struct {
 	ResolvedAt      int64
 }
 
+type HandPlayer struct {
+	ID         int64
+	SessionID  int64
+	UserID     int64
+	RoomCode   string
+	PlayerName string
+	SeatIndex  int32
+	Card1      string
+	Card2      string
+	Invested   int64
+	Won        int64
+	Net        int64
+	Folded     bool
+	ShowedDown bool
+	HandName   string
+	CreatedAt  time.Time
+}
+
 type OtpSendThrottle struct {
 	ID              int64
 	PhoneNumber     string
@@ -62,6 +80,11 @@ type OtpSendThrottle struct {
 	WindowStartedAt int64
 	LastSentAt      int64
 	SendCount       int32
+}
+
+type PasswordReset struct {
+	UserID  int64
+	ResetAt int64
 }
 
 type PasswordResetCode struct {
@@ -161,17 +184,23 @@ type PokerRoom struct {
 }
 
 type SiteSetting struct {
-	ID                        int32
-	RakeMode                  string
-	RakePercentage            float64
-	ReferralPercentagePctMode float64
-	ReferralPercentageSbMode  float64
-	CountdownSeconds          int32
-	RealDepositsEnabled       bool
-	DepositAccountName        string
-	DepositAccountNumber      string
-	GatewayDepositsEnabled    bool
-	UpdatedAt                 time.Time
+	ID                           int32
+	RakeMode                     string
+	RakePercentage               float64
+	ReferralPercentagePctMode    float64
+	ReferralPercentageSbMode     float64
+	CountdownSeconds             int32
+	RealDepositsEnabled          bool
+	DepositAccountName           string
+	DepositAccountNumber         string
+	GatewayDepositsEnabled       bool
+	IntermissionSeconds          int32
+	WithdrawalsEnabled           bool
+	WithdrawalMinAmount          int64
+	WithdrawalCancelEnabled      bool
+	WithdrawalResetCooldownHours int32
+	PublicRefillEnabled          bool
+	UpdatedAt                    time.Time
 }
 
 type Transaction struct {
@@ -194,6 +223,7 @@ type User struct {
 	ReferredBy   sql.NullString
 	Role         string
 	CreatedAt    time.Time
+	Avatar       int16
 }
 
 type UserSession struct {
@@ -201,4 +231,21 @@ type UserSession struct {
 	UserID       int64
 	ExpiresAt    time.Time
 	CreatedAt    time.Time
+}
+
+type Withdrawal struct {
+	ID                  int64
+	UserID              int64
+	Method              string
+	AccountNumber       string
+	AccountName         string
+	Amount              int64
+	Status              string
+	Note                string
+	PayoutReference     string
+	ResolvedBy          string
+	DebitTransactionID  string
+	RefundTransactionID sql.NullString
+	CreatedAt           time.Time
+	ResolvedAt          int64
 }

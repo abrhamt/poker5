@@ -17,6 +17,7 @@ var (
 const (
 	TxTypeDeposit      = "deposit"
 	TxTypeBuyIn        = "buy_in"
+	TxTypeTopUp        = "top_up"
 	TxTypeCashOut      = "cash_out"
 	TxTypeWinnerPayout = "winner_payout"
 	TxTypeSiteRake     = "site_rake"
@@ -86,20 +87,52 @@ func (s *WalletService) Deposit(ctx context.Context, userID int64, amount int64)
 	return s.moveWallet(ctx, userID, amount, TxTypeDeposit, "deposit")
 }
 
+// BuyIn moves a table's buy-in from the wallet to the felt.
 func (s *WalletService) BuyIn(ctx context.Context, userID int64, amount int64) (*repository.Transaction, error) {
 	if amount <= 0 {
 		return nil, errors.New("invalid buy-in amount")
 	}
+	return s.debit(ctx, userID, amount, TxTypeBuyIn, "buy_in")
+}
 
-	user, err := s.q.GetUserByID(ctx, userID)
+// TopUp moves more of the wallet onto a stack the player already has at a
+// table.
+func (s *WalletService) TopUp(ctx context.Context, userID int64, amount int64) (*repository.Transaction, error) {
+	if amount <= 0 {
+		return nil, errors.New("invalid refill amount")
+	}
+	return s.debit(ctx, userID, amount, TxTypeTopUp, "table_top_up")
+}
+
+// debit takes money out of a wallet only if it is there. The check, the debit
+// and the ledger row are one statement, so two debits racing each other cannot
+// both pass a balance only one of them can afford.
+func (s *WalletService) debit(ctx context.Context, userID, amount int64, txType, reason string) (*repository.Transaction, error) {
+	txID, err := utilities.GenerateTxID()
 	if err != nil {
 		return nil, err
 	}
-	if user.Wallet < amount {
+	id, err := s.q.DebitWalletWithTransaction(ctx, repository.DebitWalletWithTransactionParams{
+		Amount:        amount,
+		Type:          txType,
+		Reason:        reason,
+		TransactionID: txID,
+		UserID:        userID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInsufficientBalance
 	}
-
-	return s.moveWallet(ctx, userID, -amount, TxTypeBuyIn, "buy_in")
+	if err != nil {
+		return nil, err
+	}
+	return &repository.Transaction{
+		ID:            id,
+		UserID:        userID,
+		Amount:        -amount,
+		Type:          txType,
+		Reason:        reason,
+		TransactionID: txID,
+	}, nil
 }
 
 func (s *WalletService) CashOut(ctx context.Context, userID int64, amount int64) (*repository.Transaction, error) {

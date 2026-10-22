@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,14 +20,24 @@ var (
 	ErrNotHost             = errors.New("only the room host can start early")
 	ErrPublicNoManualStart = errors.New("public tables start automatically; manual start is not available")
 	ErrHandInProgress      = errors.New("a hand is currently in progress; wait for it to finish before joining")
-	ErrInsufficientFunds   = errors.New("your wallet balance must be greater than the big blind to join this table")
+	ErrBelowBuyIn          = errors.New("your wallet balance is below this table's buy-in")
 	ErrTableNotFound       = errors.New("table not found")
+	ErrRefillDisabled      = errors.New("refills are not available at this table")
+	ErrRefillDuringHand    = errors.New("you can refill once this hand is over for you")
+	ErrOutOfChips          = errors.New("you are out of chips — refill to play the next hand")
 )
 
+// RefillTooSmallError carries the table's big blind, which is the smallest
+// refill worth making.
+type RefillTooSmallError struct{ Min int64 }
+
+func (e RefillTooSmallError) Error() string {
+	return fmt.Sprintf("the smallest refill at this table is %d ETB", e.Min)
+}
+
 const (
-	DefaultTurnSeconds  = 25
-	FastStartSeconds    = 2
-	IntermissionSeconds = 10
+	DefaultTurnSeconds = 25
+	FastStartSeconds   = 2
 
 	// How long a sat-out player keeps their seat before their chips are
 	// returned to their wallet and the seat is freed.
@@ -54,6 +65,10 @@ type ActiveTable struct {
 	// One eviction timer per sat-out player: sitting out stops the blinds, but
 	// a seat held by someone who never comes back still costs the table.
 	SitOutTimers map[string]*time.Timer
+	// Each seated player's chosen avatar, by name, so the table state does not
+	// read the users table on every refresh. Filled on join, or on first use
+	// for a table restored after a restart.
+	Avatars map[string]int16
 }
 
 type GameService struct {
@@ -64,6 +79,10 @@ type GameService struct {
 	settings *SettingsService
 	storage  poker.Storage
 	rooms    *RoomService
+	// Optional collaborators, set after construction (see SetHistory and
+	// SetAvatarLookup); without them hands go unrecorded and avatars default.
+	history  *HistoryService
+	avatarOf func(ctx context.Context, userID int64) (int16, error)
 }
 
 func NewGameService(wallet *WalletService, sse *SSEHub, settings *SettingsService, storage poker.Storage, rooms *RoomService) *GameService {
@@ -251,24 +270,24 @@ func (s *GameService) JoinTable(ctx context.Context, room *repository.PokerRoom,
 		return ErrTableFull
 	}
 
+	// Every table, private or public, seats a player with exactly its buy-in.
+	// The rest of the wallet stays in the wallet, to be brought to the felt
+	// with Refill when the player wants it.
 	buyInAmount := table.BuyIn
-	if table.RoomType == "private" {
-		bigBlind := int64(table.Engine.Game.BigBlind)
-		if user.Wallet <= bigBlind {
-			return ErrInsufficientFunds
+	if buyInAmount <= 0 {
+		buyInAmount = poker.StartingChips
+	}
+	belowBuyIn := fmt.Errorf("%w: %d ETB is needed", ErrBelowBuyIn, buyInAmount)
+	if user.Wallet < buyInAmount {
+		return belowBuyIn
+	}
+	if _, err := s.wallet.BuyIn(ctx, user.ID, buyInAmount); err != nil {
+		if errors.Is(err, ErrInsufficientBalance) {
+			return belowBuyIn
 		}
-		buyInAmount = user.Wallet
-	}
-
-	chips := int(buyInAmount)
-	if chips <= 0 {
-		chips = poker.StartingChips
-	}
-
-	_, err := s.wallet.BuyIn(ctx, user.ID, buyInAmount)
-	if err != nil {
 		return err
 	}
+	chips := int(buyInAmount)
 
 	seatIdx := len(table.Engine.Players)
 	player := &poker.Player{
@@ -285,6 +304,10 @@ func (s *GameService) JoinTable(ctx context.Context, room *repository.PokerRoom,
 	table.Engine.Players = append(table.Engine.Players, player)
 	table.UserMap[user.ID] = seatIdx
 	table.UserIDs[user.Username] = user.ID
+	if table.Avatars == nil {
+		table.Avatars = map[string]int16{}
+	}
+	table.Avatars[user.Username] = user.Avatar
 	s.persistTable(table)
 
 	s.evaluateCountdown(ctx, table)
@@ -417,6 +440,9 @@ func (s *GameService) SitIn(ctx context.Context, roomCode string, userID int64) 
 		if p.SeatIndex != seatIdx {
 			continue
 		}
+		if p.Chips <= 0 {
+			return ErrOutOfChips
+		}
 		if !p.SittingOut {
 			return nil
 		}
@@ -428,6 +454,96 @@ func (s *GameService) SitIn(ctx context.Context, roomCode string, userID int64) 
 		return nil
 	}
 	return ErrPlayerNotFound
+}
+
+// refillAllowed reports whether seated players at this table may top up.
+// Private tables always may; public tables follow the site setting.
+func (s *GameService) refillAllowed(ctx context.Context, table *ActiveTable) bool {
+	if table.RoomType == "private" || s.settings == nil {
+		return true
+	}
+	settings, err := s.settings.Get(ctx)
+	if err != nil {
+		return false
+	}
+	return settings.PublicRefillEnabled
+}
+
+// inLiveHand is true while the player still has a stake in the hand being
+// played. A stack must not change under a hand the player is in; once they
+// have folded, been dealt out, or the hand is over, it is theirs to top up.
+func inLiveHand(table *ActiveTable, p *poker.Player) bool {
+	g := table.Engine.Game
+	return g.GameStarted && !g.Intermission && !g.GameFinished && !p.Folded
+}
+
+// Refill moves amount from the player's wallet onto their stack and returns
+// the new stack. There is no ceiling beyond the wallet itself.
+//
+// A refill also sits the player back in: whether they busted or had been sat
+// out by the turn clock, asking for more chips is them saying they are here.
+func (s *GameService) Refill(ctx context.Context, roomCode string, userID int64, amount int64) (int, error) {
+	table, err := s.lookupTable(ctx, roomCode)
+	if err != nil {
+		return 0, err
+	}
+
+	table.mu.Lock()
+	defer table.mu.Unlock()
+
+	seatIdx, seated := table.UserMap[userID]
+	if !seated {
+		return 0, ErrPlayerNotFound
+	}
+	var player *poker.Player
+	for _, p := range table.Engine.Players {
+		if p.SeatIndex == seatIdx {
+			player = p
+			break
+		}
+	}
+	if player == nil {
+		return 0, ErrPlayerNotFound
+	}
+
+	if !s.refillAllowed(ctx, table) {
+		return 0, ErrRefillDisabled
+	}
+	if minRefill := int64(table.Engine.Game.BigBlind); amount < minRefill {
+		return 0, RefillTooSmallError{Min: minRefill}
+	}
+	if inLiveHand(table, player) {
+		return 0, ErrRefillDuringHand
+	}
+
+	if _, err := s.wallet.TopUp(ctx, userID, amount); err != nil {
+		return 0, err
+	}
+
+	player.Chips += int(amount)
+	if player.SittingOut {
+		player.SittingOut = false
+		s.cancelSitOutEviction(table, player.Name)
+	}
+
+	s.persistTable(table)
+	s.evaluateCountdown(ctx, table)
+	s.broadcastTableUpdate(table)
+	return player.Chips, nil
+}
+
+// sitOutBustedPlayers runs when a hand ends. A player left with no chips is
+// sat out, which starts the same eviction clock as walking away does: the seat
+// stays theirs to refill for a while, then it is freed and the next player
+// can have it.
+func (s *GameService) sitOutBustedPlayers(table *ActiveTable) {
+	for _, p := range table.Engine.Players {
+		if p.IsBot || p.Chips > 0 || p.SittingOut {
+			continue
+		}
+		p.SittingOut = true
+		s.startSitOutEviction(table, p.Name)
+	}
 }
 
 func (s *GameService) LeaveTable(ctx context.Context, roomCode string, userID int64) error {

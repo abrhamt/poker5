@@ -4,10 +4,11 @@ The Go binary is a **JSON + SSE API only** — it serves no files. The frontend 
 a static bundle that Caddy serves straight off disk.
 
     browser ──TLS──> Caddy ──┬── /api/*   ──> 127.0.0.1:9011 (Go)
-                             ├── /admin*  ──> 127.0.0.1:9011 (Go, until the
-                             │                admin UI is its own bundle)
                              └── everything else ──> /var/www/html/goldenpoker/dist
                                                      (index.html fallback)
+
+The admin dashboard at `/admin` is part of the same bundle, loaded as its own
+chunk so players never download it.
 
 Everything the browser needs ships inside `frontend/dist`:
 
@@ -15,7 +16,6 @@ Everything the browser needs ships inside `frontend/dist`:
         index.html
         assets/     hashed JS + CSS
         cards/      the card deck, 54 SVGs
-        legacy/     admin.css + admin.js, for the server-rendered admin page
 
 Config lives in [`deploy/Caddyfile`](../deploy/Caddyfile) and
 [`deploy/poker.service`](../deploy/poker.service).

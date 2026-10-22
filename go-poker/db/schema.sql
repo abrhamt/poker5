@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS users (
     referral_code CHAR(6) NOT NULL UNIQUE,
     referred_by CHAR(6) DEFAULT NULL,
     role VARCHAR(16) NOT NULL DEFAULT 'player',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Index into the client's predefined avatar set; -1 means "not chosen",
+    -- and the client derives one from the username instead.
+    avatar SMALLINT NOT NULL DEFAULT -1
 );
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
 
@@ -45,6 +48,32 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_table ON game_sessions (table_id);
+
+-- One row per real player dealt into a hand recorded in game_sessions: what
+-- they held, put in and took out. It is what a player's own history and
+-- statistics are read from, so it is keyed for "this user's hands". Bots have
+-- no account and get no rows; they still appear in game_sessions.details_json.
+CREATE TABLE IF NOT EXISTS hand_players (
+    id BIGSERIAL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    room_code VARCHAR(32) NOT NULL,
+    -- The name they played under at the time; a later rename does not rewrite history.
+    player_name VARCHAR(64) NOT NULL,
+    seat_index INTEGER NOT NULL,
+    card1 VARCHAR(4) NOT NULL DEFAULT '',
+    card2 VARCHAR(4) NOT NULL DEFAULT '',
+    -- Chips put into the pot, chips taken back out after rake, and the difference.
+    invested BIGINT NOT NULL DEFAULT 0,
+    won BIGINT NOT NULL DEFAULT 0,
+    net BIGINT NOT NULL DEFAULT 0,
+    folded BOOLEAN NOT NULL DEFAULT FALSE,
+    showed_down BOOLEAN NOT NULL DEFAULT FALSE,
+    hand_name VARCHAR(64) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_hand_players_user ON hand_players (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hand_players_user_room ON hand_players (user_id, room_code, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS user_sessions (
     session_token VARCHAR(64) PRIMARY KEY,
@@ -147,6 +176,18 @@ CREATE TABLE IF NOT EXISTS site_settings (
     deposit_account_name VARCHAR(128) NOT NULL DEFAULT '',
     deposit_account_number VARCHAR(32) NOT NULL DEFAULT '',
     gateway_deposits_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    intermission_seconds INTEGER NOT NULL DEFAULT 3,
+    -- Withdrawals are off by default for the same reason deposits are: a fresh
+    -- install has nobody paying requests out yet. The cooldown is the number of
+    -- hours after a password reset during which an account cannot withdraw;
+    -- 0 turns it off.
+    withdrawals_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    withdrawal_min_amount BIGINT NOT NULL DEFAULT 50,
+    withdrawal_cancel_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    withdrawal_reset_cooldown_hours INTEGER NOT NULL DEFAULT 24,
+    -- Private tables always allow a seated player to refill from their
+    -- wallet; on public tables the house decides.
+    public_refill_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     -- PostgreSQL has no ON UPDATE CURRENT_TIMESTAMP, so UpdateSiteSettings
     -- sets this column explicitly.
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -206,6 +247,45 @@ CREATE TABLE IF NOT EXISTS gateway_deposits (
 );
 CREATE INDEX IF NOT EXISTS idx_gateway_deposit_status ON gateway_deposits (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_gateway_deposit_user ON gateway_deposits (user_id);
+
+-- withdrawals is a player's request to be paid out of their wallet. The money
+-- leaves the wallet when the request is made (debit_transaction_id), so a
+-- pending row is money the site is holding for the player: completing it moves
+-- nothing, while rejecting or cancelling it pays it back (refund_transaction_id).
+--
+-- user_id deliberately has no ON DELETE CASCADE: a payout record is the one
+-- thing that must outlive the account it paid.
+--
+-- The partial unique index is the one-request-at-a-time rule. Enforcing it in
+-- the database rather than with a read first means two requests racing each
+-- other cannot both get in.
+CREATE TABLE IF NOT EXISTS withdrawals (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    method VARCHAR(16) NOT NULL,
+    account_number VARCHAR(16) NOT NULL,
+    account_name VARCHAR(128) NOT NULL,
+    amount BIGINT NOT NULL CHECK (amount > 0),
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    payout_reference VARCHAR(64) NOT NULL DEFAULT '',
+    resolved_by VARCHAR(64) NOT NULL DEFAULT '',
+    debit_transaction_id VARCHAR(10) NOT NULL,
+    refund_transaction_id VARCHAR(10) DEFAULT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_withdrawal_one_pending ON withdrawals (user_id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_withdrawal_status ON withdrawals (status, id);
+CREATE INDEX IF NOT EXISTS idx_withdrawal_user ON withdrawals (user_id, id);
+
+-- password_resets remembers when each account last reset its password, which
+-- is what the withdrawal cooldown reads. It cannot come from
+-- password_reset_codes: those rows are deleted the moment a reset completes.
+CREATE TABLE IF NOT EXISTS password_resets (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    reset_at BIGINT NOT NULL
+);
 
 -- OTP tables. Their timestamps are BIGINT unix seconds rather than TIMESTAMPTZ
 -- on purpose: these are deadlines compared in Go as often as in SQL, and

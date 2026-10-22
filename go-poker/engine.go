@@ -12,8 +12,6 @@ var timeNow = time.Now
 // (smaller) MaxPlayers from the room config (6 for public, 2-9 for private).
 const MaxSeats = 9
 
-const IntermissionDuration = 5 * time.Second
-
 var (
 	Ranks    = []byte{'2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'}
 	Suits    = []byte{'C', 'D', 'H', 'S'}

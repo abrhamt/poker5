@@ -125,6 +125,7 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	} else {
 		log.Printf("automatic deposits: unavailable — set PAYMENT_ROUTER_API_KEY, PAYMENT_ROUTER_WEBHOOK_SECRET and PUBLIC_APP_URL")
 	}
+	withdrawalSvc := services.NewWithdrawalService(q, db, walletSvc, settingsSvc)
 	stopReconciler := gatewaySvc.StartReconciler(context.Background(), services.GatewayReconcileEvery)
 	stopBackground := func() {
 		stopSweeper()
@@ -143,6 +144,13 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 		gameStorage = pgStorage
 	}
 	gameSvc := services.NewGameService(walletSvc, sseHub, settingsSvc, gameStorage, roomSvc)
+	historySvc := services.NewHistoryService(q, db)
+	gameSvc.SetHistory(historySvc)
+	gameSvc.SetAvatarLookup(func(ctx context.Context, userID int64) (int16, error) {
+		u, err := q.GetUserByID(ctx, userID)
+		return u.Avatar, err
+	})
+	profileSvc := services.NewProfileService(q, gameSvc)
 
 	bootstrap(context.Background(), authSvc, walletSvc)
 
@@ -158,7 +166,9 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	sseHandler := NewSSEHandler(sseHub)
 	roomHandler := NewRoomHandler(roomSvc, authSvc, gameSvc)
 	gameHandler := NewGameHandler(gameSvc, authSvc, roomSvc)
-	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc, depositSvc)
+	withdrawalHandler := NewWithdrawalHandler(authSvc, withdrawalSvc)
+	adminHandler := NewAdminHandler(adminSvc, settingsSvc, authSvc, depositSvc, withdrawalSvc)
+	accountHandler := NewAccountHandler(authSvc, historySvc, profileSvc)
 
 	s := &FiberServer{
 		stopBackground: stopBackground,
@@ -176,11 +186,6 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "go-poker"})
 	})
-
-	// Every player-facing page is rendered by the React app in frontend/;
-	// only the admin dashboard is still server-rendered HTML.
-	admin := app.Group("/admin", adminHandler.RequireAdmin)
-	admin.Get("/", adminHandler.RenderDashboard)
 
 	api := app.Group("/api")
 
@@ -207,6 +212,7 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	table.Post("/:id/act", gameHandler.Act)
 	table.Post("/:id/start", gameHandler.Start)
 	table.Post("/:id/sit-in", gameHandler.SitIn)
+	table.Post("/:id/refill", gameHandler.Refill)
 	table.Get("/:id/state", gameHandler.GetState)
 
 	wallet := api.Group("/wallet")
@@ -216,22 +222,42 @@ func NewFiberServer(db *sql.DB, opts ...ServerOption) *FiberServer {
 	wallet.Post("/deposit/gateway", gatewayHandler.Start)
 	wallet.Get("/deposit/gateway/:reference", gatewayHandler.Status)
 	wallet.Get("/transactions", walletHandler.GetTransactions)
+	wallet.Get("/withdraw-info", withdrawalHandler.Info)
+	wallet.Post("/withdraw", withdrawalHandler.Request)
+	wallet.Post("/withdrawals/:id/cancel", withdrawalHandler.Cancel)
 
+	// The signed-in player's own history, statistics and profile.
+	me := api.Group("/me")
+	me.Get("/history", accountHandler.HistoryRooms)
+	me.Get("/history/:code", accountHandler.HistoryRoomHands)
+	me.Get("/stats", accountHandler.Stats)
+	me.Post("/avatar", accountHandler.SetAvatar)
+	me.Post("/username", accountHandler.SetUsername)
+	me.Post("/password", accountHandler.SetPassword)
+
+	// Every page, the admin dashboard included, is rendered by the React app
+	// in frontend/; the admin API below is all JSON.
 	apiAdmin := api.Group("/admin", adminHandler.RequireAdmin)
+	apiAdmin.Get("/overview", adminHandler.Overview)
+	apiAdmin.Get("/settings", adminHandler.GetSettings)
 	apiAdmin.Post("/settings", adminHandler.UpdateSettings)
 	apiAdmin.Get("/users", adminHandler.SearchUsers)
+	apiAdmin.Get("/users/:id", adminHandler.GetUser)
 	apiAdmin.Get("/transactions", adminHandler.SearchTransactions)
 	apiAdmin.Get("/deposits", adminHandler.ListPendingDeposits)
 	apiAdmin.Post("/deposits/:id/approve", adminHandler.ApproveDeposit)
 	apiAdmin.Post("/deposits/:id/reject", adminHandler.RejectDeposit)
 	apiAdmin.Post("/deposits/:id/credit", adminHandler.CreditDeposit)
+	apiAdmin.Get("/withdrawals", adminHandler.ListWithdrawals)
+	apiAdmin.Post("/withdrawals/:id/complete", adminHandler.CompleteWithdrawal)
+	apiAdmin.Post("/withdrawals/:id/reject", adminHandler.RejectWithdrawal)
 
 	api.Get("/events", sseHandler.HandleEvents)
 	api.Post("/webhooks/razielpay", gatewayHandler.RouterCallback)
 
 	// Anything unrouted is a client mistake, not a page: this server is a JSON
-	// API and serves no files. The React app (and, later, the admin app) are
-	// static bundles served by the web server in front of it.
+	// API and serves no files. The React app, admin dashboard included, is a
+	// static bundle served by the web server in front of it.
 	app.Use(func(c fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not found"})
 	})

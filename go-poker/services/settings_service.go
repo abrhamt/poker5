@@ -17,6 +17,18 @@ const (
 
 	MinCountdownSeconds = 5
 	MaxCountdownSeconds = 120
+
+	MinIntermissionSeconds     = 1
+	MaxIntermissionSeconds     = 30
+	DefaultIntermissionSeconds = 3
+
+	// The withdrawal minimum is a policy, not a technical limit, so the range
+	// only rules out nonsense: zero, and a floor nobody could ever reach.
+	MinWithdrawalMinAmount     = 1
+	MaxWithdrawalMinAmount     = 100_000
+	DefaultWithdrawalMinAmount = 50
+
+	MaxWithdrawalCooldownHours = 720
 )
 
 var (
@@ -55,6 +67,14 @@ type UpdateSettingsRequest struct {
 	DepositAccountName        string
 	DepositAccountNumber      string
 	GatewayDepositsEnabled    bool
+	IntermissionSeconds       int32
+
+	WithdrawalsEnabled           bool
+	WithdrawalMinAmount          int64
+	WithdrawalCancelEnabled      bool
+	WithdrawalResetCooldownHours int32
+
+	PublicRefillEnabled bool
 }
 
 func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest) error {
@@ -71,6 +91,23 @@ func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest)
 		return ErrInvalidSettings
 	}
 	if req.CountdownSeconds < MinCountdownSeconds || req.CountdownSeconds > MaxCountdownSeconds {
+		return ErrInvalidSettings
+	}
+
+	if req.IntermissionSeconds == 0 {
+		req.IntermissionSeconds = DefaultIntermissionSeconds
+	}
+	if req.IntermissionSeconds < MinIntermissionSeconds || req.IntermissionSeconds > MaxIntermissionSeconds {
+		return ErrInvalidSettings
+	}
+
+	if req.WithdrawalMinAmount == 0 {
+		req.WithdrawalMinAmount = DefaultWithdrawalMinAmount
+	}
+	if req.WithdrawalMinAmount < MinWithdrawalMinAmount || req.WithdrawalMinAmount > MaxWithdrawalMinAmount {
+		return ErrInvalidSettings
+	}
+	if req.WithdrawalResetCooldownHours < 0 || req.WithdrawalResetCooldownHours > MaxWithdrawalCooldownHours {
 		return ErrInvalidSettings
 	}
 
@@ -93,5 +130,13 @@ func (s *SettingsService) Update(ctx context.Context, req UpdateSettingsRequest)
 		DepositAccountName:        accountName,
 		DepositAccountNumber:      accountNumber,
 		GatewayDepositsEnabled:    req.GatewayDepositsEnabled,
+		IntermissionSeconds:       req.IntermissionSeconds,
+
+		WithdrawalsEnabled:           req.WithdrawalsEnabled,
+		WithdrawalMinAmount:          req.WithdrawalMinAmount,
+		WithdrawalCancelEnabled:      req.WithdrawalCancelEnabled,
+		WithdrawalResetCooldownHours: req.WithdrawalResetCooldownHours,
+
+		PublicRefillEnabled: req.PublicRefillEnabled,
 	})
 }

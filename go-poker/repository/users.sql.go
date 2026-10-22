@@ -10,6 +10,23 @@ import (
 	"database/sql"
 )
 
+const countSearchUsers = `-- name: CountSearchUsers :one
+SELECT COUNT(*) FROM users
+WHERE role != 'house' AND (username ILIKE $1 OR phone_number ILIKE $2)
+`
+
+type CountSearchUsersParams struct {
+	Username    string
+	PhoneNumber string
+}
+
+func (q *Queries) CountSearchUsers(ctx context.Context, arg CountSearchUsersParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSearchUsers, arg.Username, arg.PhoneNumber)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users WHERE role != 'house'
 `
@@ -52,8 +69,41 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int64, 
 	return id, err
 }
 
+const debitUserWalletIfSufficient = `-- name: DebitUserWalletIfSufficient :execrows
+UPDATE users
+SET wallet = wallet - $1
+WHERE id = $2 AND wallet >= $1
+`
+
+type DebitUserWalletIfSufficientParams struct {
+	Amount int64
+	ID     int64
+}
+
+// The balance check and the debit are one statement, so two debits racing each
+// other cannot both pass a check that only one of them can afford. Zero rows
+// affected means the balance was short.
+func (q *Queries) DebitUserWalletIfSufficient(ctx context.Context, arg DebitUserWalletIfSufficientParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, debitUserWalletIfSufficient, arg.Amount, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const getPasswordResetAt = `-- name: GetPasswordResetAt :one
+SELECT reset_at FROM password_resets WHERE user_id = $1
+`
+
+func (q *Queries) GetPasswordResetAt(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getPasswordResetAt, userID)
+	var reset_at int64
+	err := row.Scan(&reset_at)
+	return reset_at, err
+}
+
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE id = $1 LIMIT 1
 `
@@ -71,12 +121,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.ReferredBy,
 		&i.Role,
 		&i.CreatedAt,
+		&i.Avatar,
 	)
 	return i, err
 }
 
 const getUserByPhone = `-- name: GetUserByPhone :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE phone_number = $1 LIMIT 1
 `
@@ -94,12 +145,13 @@ func (q *Queries) GetUserByPhone(ctx context.Context, phoneNumber string) (User,
 		&i.ReferredBy,
 		&i.Role,
 		&i.CreatedAt,
+		&i.Avatar,
 	)
 	return i, err
 }
 
 const getUserByReferralCode = `-- name: GetUserByReferralCode :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE referral_code = $1 LIMIT 1
 `
@@ -117,12 +169,13 @@ func (q *Queries) GetUserByReferralCode(ctx context.Context, referralCode string
 		&i.ReferredBy,
 		&i.Role,
 		&i.CreatedAt,
+		&i.Avatar,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE username = $1 LIMIT 1
 `
@@ -140,12 +193,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.ReferredBy,
 		&i.Role,
 		&i.CreatedAt,
+		&i.Avatar,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE role != 'house'
 ORDER BY id DESC
@@ -176,6 +230,7 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.ReferredBy,
 			&i.Role,
 			&i.CreatedAt,
+			&i.Avatar,
 		); err != nil {
 			return nil, err
 		}
@@ -190,8 +245,24 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 	return items, nil
 }
 
+const recordPasswordReset = `-- name: RecordPasswordReset :exec
+INSERT INTO password_resets (user_id, reset_at)
+VALUES ($1, $2)
+ON CONFLICT (user_id) DO UPDATE SET reset_at = EXCLUDED.reset_at
+`
+
+type RecordPasswordResetParams struct {
+	UserID  int64
+	ResetAt int64
+}
+
+func (q *Queries) RecordPasswordReset(ctx context.Context, arg RecordPasswordResetParams) error {
+	_, err := q.db.ExecContext(ctx, recordPasswordReset, arg.UserID, arg.ResetAt)
+	return err
+}
+
 const searchUsers = `-- name: SearchUsers :many
-SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at
+SELECT id, username, phone_number, password_hash, wallet, referral_code, referred_by, role, created_at, avatar
 FROM users
 WHERE role != 'house' AND (username ILIKE $1 OR phone_number ILIKE $2)
 ORDER BY id DESC
@@ -231,6 +302,7 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Use
 			&i.ReferredBy,
 			&i.Role,
 			&i.CreatedAt,
+			&i.Avatar,
 		); err != nil {
 			return nil, err
 		}
@@ -243,6 +315,22 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Use
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateUserAvatar = `-- name: UpdateUserAvatar :exec
+UPDATE users
+SET avatar = $1
+WHERE id = $2
+`
+
+type UpdateUserAvatarParams struct {
+	Avatar int16
+	ID     int64
+}
+
+func (q *Queries) UpdateUserAvatar(ctx context.Context, arg UpdateUserAvatarParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserAvatar, arg.Avatar, arg.ID)
+	return err
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec
@@ -306,5 +394,21 @@ type UpdateUserWalletParams struct {
 
 func (q *Queries) UpdateUserWallet(ctx context.Context, arg UpdateUserWalletParams) error {
 	_, err := q.db.ExecContext(ctx, updateUserWallet, arg.Wallet, arg.ID)
+	return err
+}
+
+const updateUsername = `-- name: UpdateUsername :exec
+UPDATE users
+SET username = $1
+WHERE id = $2
+`
+
+type UpdateUsernameParams struct {
+	Username string
+	ID       int64
+}
+
+func (q *Queries) UpdateUsername(ctx context.Context, arg UpdateUsernameParams) error {
+	_, err := q.db.ExecContext(ctx, updateUsername, arg.Username, arg.ID)
 	return err
 }

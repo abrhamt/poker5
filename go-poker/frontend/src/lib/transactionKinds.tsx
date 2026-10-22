@@ -41,6 +41,17 @@ const KINDS: Record<string, TransactionKind> = {
       </>,
     ),
   },
+  top_up: {
+    label: 'Table top-up',
+    tone: 'bg-amber-500/12 text-amber-300',
+    icon: icon(
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <line x1="12" y1="8" x2="12" y2="16" />
+        <line x1="8" y1="12" x2="16" y2="12" />
+      </>,
+    ),
+  },
   cash_out: {
     label: 'Cash out',
     tone: 'bg-sky-500/12 text-sky-300',
@@ -48,6 +59,27 @@ const KINDS: Record<string, TransactionKind> = {
       <>
         <line x1="12" y1="19" x2="12" y2="5" />
         <polyline points="5 12 12 5 19 12" />
+      </>,
+    ),
+  },
+  withdrawal: {
+    label: 'Withdrawal',
+    tone: 'bg-orange-500/12 text-orange-300',
+    icon: icon(
+      <>
+        <rect x="2" y="6" width="20" height="12" rx="2" />
+        <line x1="12" y1="15" x2="12" y2="9" />
+        <polyline points="9 12 12 9 15 12" />
+      </>,
+    ),
+  },
+  withdrawal_refund: {
+    label: 'Withdrawal returned',
+    tone: 'bg-emerald-500/12 text-emerald-300',
+    icon: icon(
+      <>
+        <polyline points="1 4 1 10 7 10" />
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
       </>,
     ),
   },

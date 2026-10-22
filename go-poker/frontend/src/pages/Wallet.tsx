@@ -2,12 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { extractCbeReceiptUrl } from '../lib/cbeReceipt'
-import type { DepositInfo, DepositMethod, TransactionPage } from '../lib/types'
+import type {
+  DepositInfo,
+  DepositMethod,
+  TransactionPage,
+  Withdrawal,
+  WithdrawalMethod,
+  WithdrawInfo,
+} from '../lib/types'
 import { useAuth } from '../lib/auth'
 import { useGatewayDepositReturn } from '../lib/useGatewayDepositReturn'
 import { useToast } from '../components/Toast'
-import { DrawerLink, SideDrawer } from '../components/SideDrawer'
+import { SideDrawer } from '../components/SideDrawer'
+import { AccountNav } from '../components/PageShell'
 import { Sheet } from '../components/Sheet'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { PendingWithdrawalBanner, WithdrawPanel } from '../components/wallet/Withdraw'
 import { TransactionLedger } from '../components/TransactionLedger'
 import {
   DepositMethodChooser,
@@ -29,6 +39,9 @@ export default function Wallet() {
   const [depositOpen, setDepositOpen] = useState(false)
   const [depositInfo, setDepositInfo] = useState<DepositInfo | null>(null)
   const [method, setMethod] = useState<DepositMethod | null>(null)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [withdrawInfo, setWithdrawInfo] = useState<WithdrawInfo | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<Withdrawal | null>(null)
 
   // The ledger measures how many rows fit and asks for exactly that many, so
   // this screen owns the viewport the same way the lobby and table do.
@@ -66,6 +79,25 @@ export default function Wallet() {
       cancelled = true
     }
   }, [depositOpen])
+
+  // Read at mount for the pending banner, and again whenever the sheet opens:
+  // an admin may have paid or rejected the request since.
+  const loadWithdrawInfo = useCallback(async () => {
+    try {
+      setWithdrawInfo(await api.wallet.withdrawInfo())
+    } catch {
+      // The banner is a convenience; the sheet shows its own spinner until a
+      // read succeeds.
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadWithdrawInfo()
+  }, [loadWithdrawInfo])
+
+  useEffect(() => {
+    if (withdrawOpen) void loadWithdrawInfo()
+  }, [withdrawOpen, loadWithdrawInfo])
 
   const load = useCallback(
     async (next: number) => {
@@ -132,6 +164,41 @@ export default function Wallet() {
       setBusy(false)
     }
   }
+
+  async function withdraw(input: {
+    method: WithdrawalMethod
+    account_number: string
+    account_name: string
+    amount: number
+  }) {
+    setBusy(true)
+    try {
+      await api.wallet.withdraw(input)
+      toast(`Withdrawal of ${input.amount.toLocaleString()} ETB requested.`, 'success')
+      await Promise.all([refresh(), load(1), loadWithdrawInfo()])
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Withdrawal failed.', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function cancelWithdrawal(withdrawal: Withdrawal) {
+    setCancelTarget(null)
+    setBusy(true)
+    try {
+      await api.wallet.cancelWithdrawal(withdrawal.id)
+      toast(`${withdrawal.amount.toLocaleString()} ETB returned to your balance.`, 'success')
+      await Promise.all([refresh(), load(1), loadWithdrawInfo()])
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not cancel the withdrawal.', 'error')
+      void loadWithdrawInfo()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const pendingWithdrawal = withdrawInfo?.withdrawals.find((w) => w.status === 'pending')
 
   async function deposit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -201,6 +268,9 @@ export default function Wallet() {
 
       <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col gap-2 px-3 pt-2 pb-3">
         {returning && <GatewayReturnBanner amount={returning.amount} />}
+        {pendingWithdrawal && (
+          <PendingWithdrawalBanner withdrawal={pendingWithdrawal} onOpen={() => setWithdrawOpen(true)} />
+        )}
 
         <section className="card flex shrink-0 items-end justify-between gap-3 px-4 py-3">
           <div>
@@ -233,13 +303,14 @@ export default function Wallet() {
           />
         </section>
 
-        <button
-          type="button"
-          onClick={() => setDepositOpen(true)}
-          className="btn-gold w-full shrink-0"
-        >
-          Deposit
-        </button>
+        <div className="grid shrink-0 grid-cols-2 gap-2">
+          <button type="button" onClick={() => setWithdrawOpen(true)} className="btn-ghost w-full">
+            Withdraw
+          </button>
+          <button type="button" onClick={() => setDepositOpen(true)} className="btn-gold w-full">
+            Deposit
+          </button>
+        </div>
       </main>
 
       <SideDrawer
@@ -251,9 +322,7 @@ export default function Wallet() {
           navigate('/login', { replace: true })
         }}
       >
-        <nav className="flex flex-col gap-1.5">
-          <DrawerLink to="/lobby" label="Lobby" />
-        </nav>
+        <AccountNav current="/wallet" />
       </SideDrawer>
 
       <Sheet open={depositOpen} title={sheetTitle(method)} onClose={() => setDepositOpen(false)}>
@@ -269,6 +338,24 @@ export default function Wallet() {
           <DepositForm busy={busy} onSubmit={deposit} />
         )}
       </Sheet>
+
+      <Sheet open={withdrawOpen} title="Withdraw ETB" onClose={() => setWithdrawOpen(false)}>
+        <WithdrawPanel
+          info={withdrawInfo}
+          balance={user?.wallet ?? 0}
+          busy={busy}
+          onSubmit={(input) => void withdraw(input)}
+          onCancel={setCancelTarget}
+        />
+      </Sheet>
+
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        message={`Cancel this withdrawal? ${cancelTarget?.amount.toLocaleString() ?? ''} ETB goes back to your balance.`}
+        confirmLabel="Cancel withdrawal"
+        onConfirm={() => cancelTarget && void cancelWithdrawal(cancelTarget)}
+        onCancel={() => setCancelTarget(null)}
+      />
     </div>
   )
 }

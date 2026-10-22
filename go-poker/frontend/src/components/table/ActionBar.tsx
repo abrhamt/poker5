@@ -8,6 +8,8 @@ interface ActionBarProps {
   onAct: (action: PokerAction, amount?: number) => void
   onJoin: () => void
   onStart: () => void
+  /** Seated with no chips left: there is nothing to act with. */
+  busted?: boolean
 }
 
 /**
@@ -28,7 +30,8 @@ export function ActionBar(props: ActionBarProps) {
 
       <div className="pointer-events-none absolute inset-x-2 bottom-2 z-40 flex items-end justify-end sm:inset-x-4 sm:bottom-3">
         <div className="pointer-events-auto">
-          {hero ? <PlayerActions {...props} hero={hero} /> : <SitDown {...props} />}
+          {/* A busted player has no actions; the table shows the refill card. */}
+          {hero ? props.busted ? null : <PlayerActions {...props} hero={hero} /> : <SitDown {...props} />}
         </div>
       </div>
     </>
@@ -126,7 +129,8 @@ function PlayerActions({ state, hero, busy, onAct }: ActionBarProps & { hero: Se
               // The engine takes chips-to-commit, not a target — convert here.
               onClick={() => {
                 setRaiseOpen(false)
-                onAct('raise', amount - hero.round_bet)
+                if (isAllIn) onAct('allin')
+                else onAct('raise', amount - hero.round_bet)
               }}
               className="btn-gold flex-2 py-2 text-xs"
             >
@@ -162,7 +166,7 @@ function PlayerActions({ state, hero, busy, onAct }: ActionBarProps & { hero: Se
           label={canRaise ? (toCall > 0 ? 'Raise' : 'Bet') : 'All In'}
           tone="raise"
           disabled={locked || (!canRaise && hero.chips <= 0)}
-          onClick={() => (canRaise ? setRaiseOpen((open) => !open) : onAct('raise', hero.chips))}
+          onClick={() => (canRaise ? setRaiseOpen((open) => !open) : onAct('allin'))}
           icon={
             <>
               <line x1="12" y1="19" x2="12" y2="5" />
@@ -220,9 +224,7 @@ function SitDown({ state, busy, onJoin }: ActionBarProps) {
 
   return (
     <button type="button" onClick={onJoin} disabled={busy} className="btn-gold px-5 py-3 text-sm">
-      {state.room_type === 'private'
-        ? 'Sit Down · Wallet Balance'
-        : `Sit Down · ${state.buy_in.toLocaleString()} ETB`}
+      {`Sit Down · ${state.buy_in.toLocaleString()} ETB`}
     </button>
   )
 }

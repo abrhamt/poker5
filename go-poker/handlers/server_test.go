@@ -190,7 +190,7 @@ func TestGameServiceTwoPlayerHand(t *testing.T) {
 	}
 	u2 = &u2Fresh
 
-	room, err := roomSvc.CreatePrivateRoom(context.Background(), u1.ID, "Test Room", 10, 6)
+	room, err := roomSvc.CreatePrivateRoom(context.Background(), u1.ID, "Test Room", 10, 6, 0)
 	if err != nil {
 		t.Fatalf("create private room: %v", err)
 	}
@@ -451,48 +451,6 @@ func TestUnroutedPathsReturnJSON(t *testing.T) {
 		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
 			t.Fatalf("%s: expected a JSON content type, got %q", path, ct)
 		}
-	}
-}
-
-// The admin dashboard is the one server-rendered page left, and it must keep
-// working while its UI is still HTML.
-func TestAdminDashboardStillRenders(t *testing.T) {
-	t.Setenv("ADMIN_PASSWORD", "admin-password-123")
-
-	db := setupTestDB(t)
-	defer db.Close()
-
-	srv := newTestServerNoSMS(t, db)
-
-	loginPayload, _ := json.Marshal(map[string]string{
-		"login":    "admin",
-		"password": "admin-password-123",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(loginPayload))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := srv.App.Test(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Fatalf("admin login failed: %v", err)
-	}
-	cookie := strings.Split(resp.Header.Get("Set-Cookie"), ";")[0]
-
-	req = httptest.NewRequest(http.MethodGet, "/admin/", nil)
-	req.Header.Set("Cookie", cookie)
-	resp, err = srv.App.Test(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Fatalf("admin dashboard failed: %v (status %d)", err, resp.StatusCode)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	// Its assets ship in the frontend bundle, so they must be referenced at the
-	// paths the web server publishes them on — not the old /static tree.
-	for _, want := range []string{"/legacy/admin.css", "/legacy/admin.js"} {
-		if !strings.Contains(string(body), want) {
-			t.Fatalf("expected the admin page to load %s", want)
-		}
-	}
-	if strings.Contains(string(body), "/static/") {
-		t.Fatalf("admin page still references the removed /static tree")
 	}
 }
 

@@ -4,11 +4,17 @@ import type {
   DepositOutcome,
   GatewayCheckout,
   GatewayDepositStatus,
+  HistoryHandPage,
+  HistoryRoom,
+  PlayerStats,
   PokerAction,
   PublicRoom,
   TableState,
   TransactionPage,
   User,
+  Withdrawal,
+  WithdrawalMethod,
+  WithdrawInfo,
 } from './types'
 
 /** Thrown for any non-2xx response, carrying the server's `error` message so
@@ -23,7 +29,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, {
@@ -54,7 +60,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-const post = <T,>(path: string, payload?: unknown) =>
+export const post = <T,>(path: string, payload?: unknown) =>
   request<T>(path, {
     method: 'POST',
     body: payload === undefined ? undefined : JSON.stringify(payload),
@@ -94,7 +100,12 @@ export const api = {
       ),
     quickJoin: (smallBlind: number) =>
       post<{ room_code: string }>('/api/rooms/quick-join', { small_blind: smallBlind }),
-    createPrivate: (input: { room_name?: string; small_blind: number; max_players: number }) =>
+    createPrivate: (input: {
+      room_name?: string
+      small_blind: number
+      max_players: number
+      min_buy_in: number
+    }) =>
       post<{ room_code: string }>('/api/rooms/create-private', input),
     joinByCode: (code: string) => post<{ room_code: string }>('/api/rooms/join-code', { code }),
   },
@@ -105,6 +116,9 @@ export const api = {
     leave: (roomCode: string) => post<unknown>(`/api/table/${roomCode}/leave`),
     start: (roomCode: string) => post<unknown>(`/api/table/${roomCode}/start`),
     sitIn: (roomCode: string) => post<unknown>(`/api/table/${roomCode}/sit-in`),
+    /** Moves `amount` from the wallet onto the player's stack. */
+    refill: (roomCode: string, amount: number) =>
+      post<{ chips: number }>(`/api/table/${roomCode}/refill`, { amount }),
     act: (roomCode: string, action: PokerAction, amount = 0) =>
       post<unknown>(`/api/table/${roomCode}/act`, { action, amount }),
   },
@@ -131,5 +145,30 @@ export const api = {
       post<GatewayCheckout>('/api/wallet/deposit/gateway', { amount }),
     gatewayDepositStatus: (reference: string) =>
       request<GatewayDepositStatus>(`/api/wallet/deposit/gateway/${encodeURIComponent(reference)}`),
+    /** Whether withdrawals are open, the rules in force, and recent requests. */
+    withdrawInfo: () => request<WithdrawInfo>('/api/wallet/withdraw-info'),
+    /** Takes the amount out of the wallet immediately and files the request. */
+    withdraw: (input: {
+      method: WithdrawalMethod
+      account_number: string
+      account_name: string
+      amount: number
+    }) => post<{ withdrawal: Withdrawal }>('/api/wallet/withdraw', input),
+    cancelWithdrawal: (id: number) =>
+      post<{ withdrawal: Withdrawal }>(`/api/wallet/withdrawals/${id}/cancel`),
+  },
+
+  /** The signed-in player's own history, statistics and profile. */
+  me: {
+    historyRooms: () => request<{ rooms: HistoryRoom[] }>('/api/me/history'),
+    historyHands: (roomCode: string, page = 1, pageSize = 10) =>
+      request<HistoryHandPage>(
+        `/api/me/history/${encodeURIComponent(roomCode)}?page=${page}&page_size=${pageSize}`,
+      ),
+    stats: () => request<PlayerStats>('/api/me/stats'),
+    setAvatar: (avatar: number) => post<{ avatar: number }>('/api/me/avatar', { avatar }),
+    setUsername: (username: string) => post<unknown>('/api/me/username', { username }),
+    setPassword: (currentPassword: string, newPassword: string) =>
+      post<unknown>('/api/me/password', { current_password: currentPassword, new_password: newPassword }),
   },
 }

@@ -10,6 +10,26 @@ import (
 	"time"
 )
 
+const countFilterTransactions = `-- name: CountFilterTransactions :one
+SELECT COUNT(*)
+FROM transactions t
+JOIN users u ON u.id = t.user_id
+WHERE u.username ILIKE $1::text
+  AND ($2::text = '' OR t.type = $2::text)
+`
+
+type CountFilterTransactionsParams struct {
+	Username   string
+	TypeFilter string
+}
+
+func (q *Queries) CountFilterTransactions(ctx context.Context, arg CountFilterTransactionsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countFilterTransactions, arg.Username, arg.TypeFilter)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countTransactionsByUserID = `-- name: CountTransactionsByUserID :one
 SELECT COUNT(*) AS total
 FROM transactions
@@ -44,6 +64,43 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 		arg.Type,
 		arg.Reason,
 		arg.TransactionID,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const debitWalletWithTransaction = `-- name: DebitWalletWithTransaction :one
+WITH debited AS (
+    UPDATE users
+    SET wallet = wallet - $1::bigint
+    WHERE users.id = $5::bigint AND users.wallet >= $1::bigint
+    RETURNING users.id AS debited_user_id
+)
+INSERT INTO transactions (user_id, amount, type, reason, transaction_id)
+SELECT debited.debited_user_id, -$1::bigint, $2, $3, $4
+FROM debited
+RETURNING transactions.id
+`
+
+type DebitWalletWithTransactionParams struct {
+	Amount        int64
+	Type          string
+	Reason        string
+	TransactionID string
+	UserID        int64
+}
+
+// Takes money out of a wallet and records why, as one statement: the balance
+// check, the debit and the ledger row cannot be split by a concurrent debit or
+// a failure between them. No row back means the balance was short.
+func (q *Queries) DebitWalletWithTransaction(ctx context.Context, arg DebitWalletWithTransactionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, debitWalletWithTransaction,
+		arg.Amount,
+		arg.Type,
+		arg.Reason,
+		arg.TransactionID,
+		arg.UserID,
 	)
 	var id int64
 	err := row.Scan(&id)

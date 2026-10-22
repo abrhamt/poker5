@@ -124,3 +124,31 @@ func TestSitInRestoresPlayerToTheNextHand(t *testing.T) {
 		t.Fatalf("player was not dealt cards after sitting back in")
 	}
 }
+
+// A busted player keeps their seat so they can refill, but is dealt nothing
+// and posts nothing until they have chips again.
+func TestBustedPlayerKeepsSeatButIsDealtOut(t *testing.T) {
+	e := seatPlayers("alice", "bob", "carol")
+	broke := find(e, "carol")
+	broke.Chips = 0
+
+	if !e.StartHand() {
+		t.Fatal("hand should start with two players who have chips")
+	}
+	if find(e, "carol") == nil {
+		t.Fatal("busted player was removed from the table")
+	}
+	if !broke.Folded || broke.IsSmallBlind || broke.IsBigBlind || broke.Cards[0] != "1B" {
+		t.Fatalf("busted player was dealt in: %+v", broke)
+	}
+
+	// Refilled between hands, they are dealt into the next one.
+	e.Game.Intermission = true
+	broke.Chips = 500
+	if !e.StartHand() {
+		t.Fatal("next hand should start")
+	}
+	if broke.Folded || broke.Cards[0] == "1B" {
+		t.Fatalf("refilled player was not dealt in: %+v", broke)
+	}
+}

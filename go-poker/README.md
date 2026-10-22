@@ -19,7 +19,7 @@ binary, and tests mirroring `poker/test_game.py`.
         repository/                sqlc output + the connection pool
         server.go                  HTTP server + JSON API + html/template rendering
         frontend/                  React + Vite single-page app (all player screens)
-        handlers/                  Fiber v3 JSON API, SSE hub, SPA + admin serving
+        handlers/                  Fiber v3 JSON API (player + admin) and SSE hub
         templates/                 HTML templates ported from Django
         static/                    JS / CSS / images copied from the Django app
         cmd/poker-demo/main.go     CLI binary that runs a sample game end-to-end
@@ -87,10 +87,11 @@ Read from the environment, or from a `.env` file next to the binary.
 
 ## Frontend
 
-Every player-facing screen (login, register, lobby, wallet, table) is a React
-app in `frontend/`, talking to the Go server over the JSON API under `/api` and
-receiving live table updates over SSE at `/api/events`. Only the admin dashboard
-is still server-rendered HTML.
+Every screen (login, register, lobby, wallet, table, and the admin dashboard
+under `/admin`) is a React app in `frontend/`, talking to the Go server over the
+JSON API under `/api` and receiving live table updates over SSE at
+`/api/events`. The admin dashboard is a separate lazily-loaded chunk
+(`frontend/src/admin/`), so players never download it.
 
 Development — run both, and use the Vite URL. It proxies `/api` and `/static`
 at the Go server, so cookies and the SSE stream behave as they do in production:
@@ -143,6 +144,23 @@ Notes for driving a hand:
   wide, short window — in portrait you get the rotate prompt, which is correct.
 - The admin dashboard at `/admin` needs `ADMIN_PASSWORD` set before start-up,
   and admin accounts deliberately cannot take a seat.
+
+## Buy-ins and refills
+
+Every table seats a player with exactly its buy-in: the fixed tier amount on a
+public table, the host's figure on a private one. The rest of the wallet stays
+in the wallet. A seated player adds more with the **+** beside their stack —
+any amount from one big blind up to their whole wallet, no table cap — logged as
+a `top_up` ledger row.
+
+A refill is refused while the player is still in the hand being played (a stack
+must not change under a live hand); once they fold, are dealt out, or the hand
+ends, it goes through. Private tables always allow refills; public tables follow
+the **Refill on public tables** setting.
+
+A player who busts keeps their seat, sat out, so they can refill and play on. A
+refill sits them back in; if they never do, the usual sit-out eviction frees the
+seat after ten minutes.
 
 ## Deposits
 
@@ -246,6 +264,37 @@ keeps the one-transfer-one-credit rule intact: credited with the reference, the
 same transfer arriving later on its other link is refused as already claimed.
 Credited without one, only the receipt URL stands between that transfer and a
 second credit.
+
+## Withdrawals
+
+Players request a payout from the wallet screen, to a **CBE** account (13
+digits) or a **Telebirr** number (`09XXXXXXXX`; `+251…` is accepted and
+normalized). They also give the account holder's name, so whoever pays it can
+check the name against the account before sending.
+
+The amount leaves the wallet **when the request is made**, not when it is paid,
+so a player cannot stake money that is already on its way out. The request then
+waits in **Withdrawals** on the admin dashboard, oldest first:
+
+- **Mark paid** — the admin has sent the money by hand. Nothing else moves; an
+  optional transfer reference is kept on the row.
+- **Reject** — the amount goes back to the wallet as a `withdrawal_refund`
+  ledger row. A reason is required, and the player sees it.
+
+A player has at most **one** pending request at a time. That is enforced by a
+partial unique index on `withdrawals`, not by a read first, so two requests
+racing each other cannot both get in. Resolving a request is a conditional
+update on `status = 'pending'`, so two admins (or a double-click) cannot refund
+it twice.
+
+Everything else is a site setting:
+
+| Setting | Default | Effect |
+|---|---|---|
+| Accept withdrawal requests | off | Closed means no new requests; ones already waiting stay in the queue. |
+| Minimum withdrawal | 50 ETB | Smallest request accepted. |
+| Players can cancel | on | A player may withdraw a pending request themselves, which refunds it like a rejection. |
+| Pause after password reset | 24 h | No new requests for this long after the account's password is reset. 0 turns it off. Someone who has just taken over an account by resetting its password is exactly who would drain it. |
 
 ## Run the CLI demo
 

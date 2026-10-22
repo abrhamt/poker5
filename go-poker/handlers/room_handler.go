@@ -35,6 +35,7 @@ func (h *RoomHandler) CreatePrivate(c fiber.Ctx) error {
 		RoomName   string `json:"room_name" form:"room_name"`
 		SmallBlind int32  `json:"small_blind" form:"small_blind"`
 		MaxPlayers int32  `json:"max_players" form:"max_players"`
+		MinBuyIn   int64  `json:"min_buy_in" form:"min_buy_in"`
 	}
 	_ = c.Bind().Body(&req)
 	if req.RoomName == "" {
@@ -53,7 +54,14 @@ func (h *RoomHandler) CreatePrivate(c fiber.Ctx) error {
 		}
 	}
 
-	room, err := h.rooms.CreatePrivateRoom(c.Context(), user.ID, req.RoomName, req.SmallBlind, req.MaxPlayers)
+	if req.MinBuyIn <= 0 {
+		if val := c.FormValue("min_buy_in"); val != "" {
+			n, _ := strconv.ParseInt(val, 10, 64)
+			req.MinBuyIn = n
+		}
+	}
+
+	room, err := h.rooms.CreatePrivateRoom(c.Context(), user.ID, req.RoomName, req.SmallBlind, req.MaxPlayers, req.MinBuyIn)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}

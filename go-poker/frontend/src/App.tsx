@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './lib/auth'
 import { ToastProvider } from './components/Toast'
@@ -10,6 +11,13 @@ import ResetPassword from './pages/ResetPassword'
 import Lobby from './pages/Lobby'
 import Wallet from './pages/Wallet'
 import Table from './pages/Table'
+import History from './pages/History'
+import Analytics from './pages/Analytics'
+import Profile from './pages/Profile'
+import { Spinner } from './components/Spinner'
+
+// The admin dashboard is its own chunk: players never download it.
+const AdminApp = lazy(() => import('./admin/AdminApp'))
 
 export default function App() {
   return (
@@ -33,8 +41,20 @@ export default function App() {
             <Route element={<RequireAuth />}>
               <Route path="/lobby" element={<Lobby />} />
               <Route path="/wallet" element={<Wallet />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/profile" element={<Profile />} />
               <Route path="/table/:code" element={<Table />} />
             </Route>
+
+            <Route
+              path="/admin/*"
+              element={
+                <Suspense fallback={<Spinner label="Loading dashboard…" />}>
+                  <AdminApp />
+                </Suspense>
+              }
+            />
 
             <Route path="/" element={<Navigate to="/lobby" replace />} />
             <Route path="*" element={<Navigate to="/lobby" replace />} />

@@ -19,13 +19,26 @@ func unixMilliOrZero(t time.Time) int64 {
 	return t.UnixMilli()
 }
 
+func (s *GameService) intermissionDuration() time.Duration {
+	seconds := int32(DefaultIntermissionSeconds)
+	if s.settings != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if settings, err := s.settings.Get(ctx); err == nil && settings.IntermissionSeconds > 0 {
+			seconds = settings.IntermissionSeconds
+		}
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func (s *GameService) startIntermissionTimer(table *ActiveTable) {
 	if table.IntermissionTimer != nil {
 		table.IntermissionTimer.Stop()
 	}
-	table.IntermissionEndsAt = time.Now().Add(IntermissionSeconds * time.Second)
+	pause := s.intermissionDuration()
+	table.IntermissionEndsAt = time.Now().Add(pause)
 	roomCode := table.RoomCode
-	table.IntermissionTimer = time.AfterFunc(IntermissionSeconds*time.Second, func() {
+	table.IntermissionTimer = time.AfterFunc(pause, func() {
 		s.fireNextHand(roomCode)
 	})
 }
@@ -48,7 +61,15 @@ func (s *GameService) fireNextHand(roomCode string) {
 	}
 
 	table.Engine.Game.Intermission = false
-	table.Engine.StartHand()
+	if !table.Engine.StartHand() {
+		// Fewer than two players can be dealt in — someone busted or is
+		// sitting out. The table goes back to waiting rather than staying
+		// "started" with no hand, so a refill or sit-in can start it again.
+		table.Engine.Game.GameStarted = false
+		s.persistTable(table)
+		s.broadcastTableUpdate(table)
+		return
+	}
 	s.resetTurnTimer(table)
 	s.broadcastTableUpdate(table)
 }
@@ -78,6 +99,7 @@ func (s *GameService) SubmitAction(ctx context.Context, roomCode string, user *r
 
 	if table.Engine.Game.Intermission && table.Engine.Game.LastWinner != nil {
 		s.handlePotCommission(ctx, table)
+		s.sitOutBustedPlayers(table)
 		s.startIntermissionTimer(table)
 	}
 
@@ -157,6 +179,7 @@ func (s *GameService) handleTurnTimeout(roomCode string) {
 
 	if table.Engine.Game.Intermission && table.Engine.Game.LastWinner != nil {
 		s.handlePotCommission(context.Background(), table)
+		s.sitOutBustedPlayers(table)
 		s.startIntermissionTimer(table)
 	}
 
@@ -170,6 +193,17 @@ func (s *GameService) handlePotCommission(ctx context.Context, table *ActiveTabl
 	if len(payouts) == 0 {
 		return
 	}
+
+	// What each winner took from the pot, and what the rake took back off
+	// them, for the hand's history record — written whatever happens below.
+	gross := map[string]int64{}
+	rakeByWinner := map[string]int64{}
+	for _, payout := range payouts {
+		if payout.Amount > 0 {
+			gross[payout.Winner] += int64(payout.Amount)
+		}
+	}
+	defer func() { s.recordHand(table, gross, rakeByWinner) }()
 
 	settings, err := s.settings.Get(ctx)
 	if err != nil {
@@ -195,6 +229,7 @@ func (s *GameService) handlePotCommission(ctx context.Context, table *ActiveTabl
 		if raked <= 0 {
 			continue
 		}
+		rakeByWinner[payout.Winner] += raked
 		for _, p := range table.Engine.Players {
 			if p.Name == payout.Winner {
 				p.Chips -= int(raked)
@@ -214,6 +249,7 @@ func (s *GameService) broadcastTableUpdate(table *ActiveTable) {
 	state["room_type"] = table.RoomType
 	state["max_players"] = table.MaxPlayers
 	state["host_user_id"] = table.HostUserID
+	state["refill_enabled"] = s.refillAllowed(context.Background(), table)
 
 	remainingSecs := int(time.Until(table.TimerExpiry).Seconds())
 	if remainingSecs < 0 {
@@ -263,6 +299,7 @@ func (s *GameService) GetTableState(ctx context.Context, roomCode string, curren
 	state["max_players"] = table.MaxPlayers
 	state["host_user_id"] = table.HostUserID
 	state["is_host"] = table.HostUserID != 0 && table.UserIDs[currentUsername] == table.HostUserID
+	state["refill_enabled"] = s.refillAllowed(ctx, table)
 
 	remainingSecs := int(time.Until(table.TimerExpiry).Seconds())
 	if remainingSecs < 0 {
@@ -310,6 +347,7 @@ func (s *GameService) GetTableState(ctx context.Context, roomCode string, curren
 			pMap["small_blind"] = actualPlayer.IsSmallBlind
 			pMap["big_blind"] = actualPlayer.IsBigBlind
 			pMap["sitting_out"] = actualPlayer.SittingOut
+			pMap["avatar"] = s.avatarFor(ctx, table, actualPlayer)
 
 			if pName == currentUsername {
 				state["is_sitting_out"] = actualPlayer.SittingOut

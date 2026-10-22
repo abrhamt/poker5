@@ -28,6 +28,13 @@ var migrations = []string{
 	`ALTER TABLE bank_deposits ADD COLUMN IF NOT EXISTS last_attempt_at BIGINT NOT NULL DEFAULT 0`,
 	`ALTER TABLE poker_player ADD COLUMN IF NOT EXISTS sitting_out BOOLEAN NOT NULL DEFAULT FALSE`,
 	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS gateway_deposits_enabled BOOLEAN NOT NULL DEFAULT FALSE`,
+	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS intermission_seconds INTEGER NOT NULL DEFAULT 3`,
+	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS withdrawals_enabled BOOLEAN NOT NULL DEFAULT FALSE`,
+	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS withdrawal_min_amount BIGINT NOT NULL DEFAULT 50`,
+	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS withdrawal_cancel_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
+	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS withdrawal_reset_cooldown_hours INTEGER NOT NULL DEFAULT 24`,
+	`ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS public_refill_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
+	`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar SMALLINT NOT NULL DEFAULT -1`,
 }
 
 // Apply creates the schema, runs the migrations, and makes sure the single
